@@ -274,11 +274,23 @@ void win_flush_all(void)
 		win_flush(w);
 }
 
+// The update region is kept in content coordinates (0,0 the content's top left), whatever the
+// port's origin is when it is invalidated: a region in the port's local coordinates goes in and
+// out through these.
+void win_update_rgn(Win *w, const Rgn *g, int op)
+{
+	Rgn *t = rgn_new();
+	rgn_copy(t, g);
+	rgn_offset(t, -w->port->portRect.left, -w->port->portRect.top);
+	rgn_op(w->update, w->update, t, op);
+	rgn_free(t);
+}
+
 void win_invalidate(Win *w, QRect r)
 {
 	Rgn t = {{0, 0, 0, 0}, 0, 0, NULL};
 	rgn_set_rect(&t, r);
-	rgn_op(w->update, w->update, &t, RGN_UNION);
+	win_update_rgn(w, &t, RGN_UNION);
 	free(t.r);
 }
 
@@ -992,7 +1004,7 @@ static void sh_InvalWindowRgn(PPC *c)
 	Win *w = WIN(A(0));
 	Rgn *g = RGN(A(1));
 	if (w && g)
-		rgn_op(w->update, w->update, g, RGN_UNION);
+		win_update_rgn(w, g, RGN_UNION);
 	RET(0);
 }
 static void sh_ValidWindowRect(PPC *c)
@@ -1001,7 +1013,7 @@ static void sh_ValidWindowRect(PPC *c)
 	if (w) {
 		Rgn t = {{0, 0, 0, 0}, 0, 0, NULL};
 		rgn_set_rect(&t, RECT(A(1)));
-		rgn_op(w->update, w->update, &t, RGN_DIFF);
+		win_update_rgn(w, &t, RGN_DIFF);
 		free(t.r);
 	}
 	RET(0);
@@ -1011,7 +1023,7 @@ static void sh_ValidWindowRgn(PPC *c)
 	Win *w = WIN(A(0));
 	Rgn *g = RGN(A(1));
 	if (w && g)
-		rgn_op(w->update, w->update, g, RGN_DIFF);
+		win_update_rgn(w, g, RGN_DIFF);
 	RET(0);
 }
 
@@ -1024,7 +1036,12 @@ static void sh_BeginUpdate(PPC *c)
 	if (!w->saved_vis)
 		w->saved_vis = rgn_new();
 	rgn_copy(w->saved_vis, p->vis);
-	// the update region is in local coordinates of the port's origin at invalidation time
+	if (ppc_verbose >= 2)
+		ppc_log("BeginUpdate %08x: vis %d,%d,%d,%d update %d,%d,%d,%d port %d,%d,%d,%d", w->tok, p->vis->bbox.top, p->vis->bbox.left,
+			p->vis->bbox.bottom, p->vis->bbox.right, w->update->bbox.top, w->update->bbox.left, w->update->bbox.bottom,
+			w->update->bbox.right, p->portRect.top, p->portRect.left, p->portRect.bottom, p->portRect.right);
+	// the update region, from content coordinates to the port's
+	rgn_offset(w->update, p->portRect.left, p->portRect.top);
 	rgn_op(p->vis, p->vis, w->update, RGN_SECT);
 	rgn_set_empty(w->update);
 	w->in_update = 1;

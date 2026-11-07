@@ -303,7 +303,8 @@ static void sh_PaintOne(PPC *c)
 	Win *w = WIN(A(0));
 	Rgn *g = RGN(A(1));
 	if (w && g)
-		win_invalidate(w, g->bbox);
+		// global coordinates, to the content's
+		win_invalidate(w, rect_off(g->bbox, w->port->portRect.left - w->frame.left, w->port->portRect.top - w->frame.top));
 }
 
 // ---- controls, collections, Process Manager, Internet Config, and the rest
