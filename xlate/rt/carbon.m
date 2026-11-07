@@ -514,7 +514,8 @@ static void sh_GetPortPenSize(PPC *c)
 	RET(A(1));
 }
 
-// IconIDToRgn(rgn, const Rect *, alignment, iconID): the icon's rectangle
+// IconIDToRgn(rgn, const Rect *, alignment, iconID): the shape of the icon's mask ('ICN#' 32x32, or 'ics#'
+// 16x16 for a small rectangle), centered in the rectangle as the icon is drawn (alignment: none)
 static void sh_IconIDToRgn(PPC *c)
 {
 	Rgn *g = RGN(A(0));
@@ -522,7 +523,42 @@ static void sh_IconIDToRgn(PPC *c)
 		RET(-50);
 		return;
 	}
-	rgn_set_rect(g, RECT(A(1)));
+	QRect r = RECT(A(1));
+	int16_t id = (int16_t)A(3);
+	int rw = r.right - r.left, rh = r.bottom - r.top;
+	int small = rw < 32 || rh < 32;
+	uint32_t h = res_get(small ? 'ics#' : 'ICN#', id, 0);
+	if (!h && small)
+		h = res_get('ICN#', id, 0), small = 0;
+	if (!h || !HP(h)) {
+		rgn_set_rect(g, r);
+		rgn_sync(A(0));
+		RET(0);
+		return;
+	}
+	int n = small ? 16 : 32, rowb = n / 8;
+	uint32_t mask = HP(h) + (uint32_t)(rowb * n);   // the mask follows the icon
+	int ox = r.left + (rw - n) / 2, oy = r.top + (rh - n) / 2;
+	rgn_set_empty(g);
+	RgnBuild rb;
+	rb_begin(&rb, g);
+	for (int y = 0; y < n; y++) {
+		int16_t xs[64];
+		int k = 0, in = 0;
+		for (int x = 0; x < n; x++) {
+			int on = (LD8(mask + (uint32_t)(y * rowb + x / 8)) >> (7 - (x & 7))) & 1;
+			if (on != in) {
+				xs[k++] = (int16_t)(ox + x);
+				in = on;
+			}
+		}
+		if (in)
+			xs[k++] = (int16_t)(ox + n);
+		if (k)
+			rb_row(&rb, oy + y, xs, k);
+	}
+	rb_end(&rb);
+	rgn_sect_rect(g, r);
 	rgn_sync(A(0));
 	RET(0);
 }
