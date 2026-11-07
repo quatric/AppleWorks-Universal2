@@ -145,6 +145,18 @@ uint32_t ppc_host_tvec(Shim fn)
 static int depth;
 static int trace_calls;
 
+// PPC_WATCH=address: logs the toolbox call after which the six bytes there changed
+static uint32_t watch_addr;
+static uint8_t watch_val[6];
+static void watch_check(const char *after, uint32_t lr)
+{
+	if (!memcmp(G(watch_addr), watch_val, 6))
+		return;
+	memcpy(watch_val, G(watch_addr), 6);
+	ppc_log("watch %08x: %02x%02x %02x%02x %02x%02x after %s (lr %08x)", watch_addr, watch_val[0], watch_val[1],
+		watch_val[2], watch_val[3], watch_val[4], watch_val[5], after, lr);
+}
+
 void ppc_call(PPC *c, uint32_t code)
 {
 	if (code >= IMPORT_CODE) {
@@ -156,6 +168,8 @@ void ppc_call(PPC *c, uint32_t code)
 				import_fns[i](c);
 			else
 				missing(c, i);
+			if (watch_addr)
+				watch_check(ppc_import_names[i], c->lr);
 			if (trace_calls > 1)
 				ppc_log("%*s<- %s = %08x", depth, "", ppc_import_names[i], c->r[3]);
 			return;
@@ -458,6 +472,8 @@ void ppc_start(const char *rsrc_path)
 	ppc_trace_on = getenv("PPC_TRACE") != NULL;
 	v = getenv("PPC_CALLS");
 	trace_calls = v ? atoi(v) : 0;
+	v = getenv("PPC_WATCH");
+	watch_addr = v ? (uint32_t)strtoul(v, NULL, 16) : 0;
 	XG = mmap(NULL, 1ull << 32, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
 	if (XG == MAP_FAILED) {
 		perror("guest window");

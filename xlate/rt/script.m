@@ -3,8 +3,10 @@
 // PPC_SCRIPT="t:cmd;t:cmd;..." with t seconds after start and cmd one of
 //   click x y [mods]    a click at window-local x, y of the front window
 //   wclick Title x y [mods]  a click at content-local x, y of the window titled Title... (_ for spaces)
-//   down x y / move x y / up    a press, drag and release
+//   down x y / move x y / up    a press, drag and release (down and move also take a
+//                       window title first, as wclick does)
 //   key c [mods]        a key (c a character, or a name: return tab esc left right up down del)
+//   type text           keys for each character of text (underscores for spaces)
 //   shot file [Title]   the front window's (or the titled window's) pixels as a PNG
 //   menu id item        a menu choice
 //   windows             log every window
@@ -68,7 +70,12 @@ static uint16_t mods_of(const char *s)
 	return m;
 }
 
-static Win *front(void) { return win_front(1); }
+// the frontmost window that isn't floating
+static Win *front(void)
+{
+	Win *w = WIN(SHIM_CALL("FrontNonFloatingWindow"));
+	return w ? w : win_front(1);
+}
 
 // the window whose title starts with t (underscores for spaces), or the front window if t is empty
 static Win *titled(const char *t)
@@ -93,6 +100,20 @@ static QPoint global_of(int x, int y)
 	QPoint o = w ? win_origin(w) : (QPoint){0, 0};
 	int l = w ? w->port->portRect.left : 0, t = w ? w->port->portRect.top : 0;
 	return (QPoint){(int16_t)(o.v + y - t), (int16_t)(o.h + x - l)};
+}
+
+// "op Title x y": content-local x, y of the window whose title starts with Title
+static QPoint titled_pos(const char *cmd)
+{
+	char t[200];
+	int x = 0, y = 0;
+	sscanf(cmd, "%*s %199s %d %d", t, &x, &y);
+	for (char *q = t; *q; q++)
+		if (*q == '_')
+			*q = ' ';
+	Win *w = titled(t);
+	QPoint o = w ? win_origin(w) : (QPoint){0, 0};
+	return (QPoint){(int16_t)(o.v + y), (int16_t)(o.h + x)};
 }
 
 static void mouse(int what, QPoint g, uint16_t mods)
@@ -150,7 +171,10 @@ static void run(const char *cmd)
 		ppc_log("script: %s", cmd);
 	if (!strcmp(op, "click") || !strcmp(op, "down") || !strcmp(op, "wclick")) {
 		fake = 1;
-		if (op[0] == 'w') {
+		if (op[0] == 'd' && !(a[0] == '-' || (a[0] >= '0' && a[0] <= '9'))) {
+			fake_pos = titled_pos(cmd);
+			m[0] = 0;
+		} else if (op[0] == 'w') {
 			// wclick Title x y [mods]: content-local x, y of the window whose title starts with Title
 			// (underscores for spaces)
 			char t[200], m2[64] = "";
@@ -173,7 +197,7 @@ static void run(const char *cmd)
 		}
 	} else if (!strcmp(op, "move")) {
 		fake = 1;
-		fake_pos = global_of(atoi(a), atoi(b));
+		fake_pos = (a[0] == '-' || (a[0] >= '0' && a[0] <= '9')) ? global_of(atoi(a), atoi(b)) : titled_pos(cmd);
 	} else if (!strcmp(op, "up")) {
 		fake_down = 0;
 		mouse(2, fake_pos, 0);
@@ -208,6 +232,16 @@ static void run(const char *cmd)
 		e.win = front();
 		e.where = fake ? fake_pos : ev_mouse_global();
 		ev_post(e);
+	} else if (!strcmp(op, "type")) {
+		for (const char *q = a; *q; q++) {
+			Ev e = {0};
+			e.what = 3;
+			e.message = (uint8_t)(*q == '_' ? ' ' : *q);
+			e.modifiers = 0x80;
+			e.win = front();
+			e.where = fake ? fake_pos : ev_mouse_global();
+			ev_post(e);
+		}
 	} else if (!strcmp(op, "menu")) {
 		Ev e = {0};
 		e.what = 1;

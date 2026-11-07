@@ -26,6 +26,7 @@ typedef struct {
 	int hidden;
 	TEng *te;              // edit text
 	int16_t res_id;        // icon, picture, CNTL
+	uint32_t pane;         // a user pane standing for an item that isn't a control, once asked for
 } DItem;
 
 typedef struct Dlg {
@@ -301,6 +302,9 @@ static uint32_t create(QRect r, const uint8_t *title, int visible, int procID, u
 	d->win = w;
 	d->next = dialogs;
 	dialogs = d;
+	// Mac OS X dialogs always have an embedding hierarchy: the items' controls
+	// go in the root control (a later CreateRootControl finds it already there)
+	SHIM_CALL("CreateRootControl", w, 0);
 	add_items(d, ditl, ditl_len, 0, 0);
 	// the first button is the default, as ModalDialog's Return key had it
 	for (int i = 1; i <= d->n && !d->def; i++)
@@ -422,6 +426,10 @@ static void sh_SetDialogItem(PPC *c)
 		if (it->te && memcmp(&r, &it->r, sizeof r))
 			te_set_rects(it->te, r, r);
 		it->r = r;
+		if (it->pane && CTL(it->pane)) {
+			SHIM_CALL("MoveControl", it->pane, (uint32_t)r.left, (uint32_t)r.top);
+			SHIM_CALL("SizeControl", it->pane, (uint32_t)(r.right - r.left), (uint32_t)(r.bottom - r.top));
+		}
 	}
 }
 
@@ -509,6 +517,16 @@ static void sh_GetDialogItemAsControl(PPC *c)
 	int kind = it ? it->type & 0x7f : -1;
 	if (it && kind >= ctrlItem && kind <= ctrlItem + resCtrl) {
 		ST32(A(2), it->h);
+		RET(0);
+		return;
+	}
+	// on Mac OS X every item is a control: the others are user panes at their rectangles
+	Dlg *d = DLG(A(0));
+	Win *w = d ? dwin(d) : NULL;
+	if (it && w) {
+		if (!it->pane || !CTL(it->pane))
+			it->pane = ctl_create(w, it->r, NULL, !it->hidden, 0, 0, 0, 256, 0)->h;   // kControlUserPaneProc
+		ST32(A(2), it->pane);
 		RET(0);
 		return;
 	}
@@ -685,15 +703,16 @@ static Dlg *event_dialog(uint32_t ev)
 		gfree(wp);
 		return part == 3 ? DLG(w) : NULL;   // inContent
 	}
-	Win *f = win_front(1);
-	return f ? DLG(f->tok) : NULL;
+	// keys and the rest go to the frontmost window that isn't floating
+	return DLG(SHIM_CALL("FrontNonFloatingWindow"));
 }
 
 static void sh_IsDialogEvent(PPC *c)
 {
 	uint16_t what = LD16(A(0));
 	Dlg *d = event_dialog(A(0));
-	RET(d && (what != keyDown && what != autoKey ? 1 : 1));
+	(void)what;
+	RET(d != NULL);
 }
 
 static void flash(Dlg *d, int i)

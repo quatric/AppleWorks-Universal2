@@ -23,6 +23,8 @@ typedef struct {
 	uint32_t click_tick;
 	int last_r, last_c;
 	int anchor_r;
+	uint32_t ldef;          // a custom list definition (ListDefSpec kListDefUserProcType), or 0
+	uint32_t cells_h;       // the guest's copy of the cell data (ListRec.cells)
 } List;
 
 static HMap lists;
@@ -53,11 +55,47 @@ static int max_top(List *l)
 }
 
 // the guest's ListRec
-static void lsync(List *l)
+// the offset of cell i's data in the cells handle
+static int cell_off(List *l, int i)
+{
+	int o = 0;
+	for (int k = 0; k < i; k++)
+		o += l->cells[k].n;
+	return o;
+}
+
+// what a list definition may have changed in the record: rView, indent and cellSize
+static void lload(List *l)
 {
 	uint32_t p = HP(l->h);
 	if (!p)
 		return;
+	l->view = RECT(p);
+	l->csize = LDPT(p + 16);
+}
+
+static void lsync(List *l)
+{
+	// the cell data and cellArray, which a list definition reads through the handle
+	int n = l->rows * l->cols, total = cell_off(l, n);
+	if (HSize(l->h) < (uint32_t)(86 + 2 * (n + 1)))
+		HSetSize(l->h, 86 + 2 * (n + 1));
+	if (!l->cells_h)
+		l->cells_h = NewHandleClearG(total);
+	else if (HSize(l->cells_h) != (uint32_t)total)
+		HSetSize(l->cells_h, total);
+	uint32_t p = HP(l->h);
+	if (!p)
+		return;
+	uint32_t cd = HP(l->cells_h);
+	for (int i = 0, o = 0; i < n; o += l->cells[i].n, i++) {
+		if (l->cells[i].n && cd)
+			memcpy(G(cd + o), l->cells[i].d, l->cells[i].n);
+		ST16(p + 86 + 2 * i, (uint16_t)(o | (l->cells[i].sel ? 0x8000 : 0)));
+	}
+	ST16(p + 86 + 2 * n, (uint16_t)total);
+	ST32(p + 80, l->cells_h);
+	ST16(p + 84, (uint16_t)(2 * n));
 	PUTRECT(p, l->view);
 	ST32(p + 8, l->port ? l->port->tok : 0);
 	STPT(p + 12, (QPoint){0, 5});
@@ -129,6 +167,26 @@ static void draw_cell(List *l, int r, int c)
 	if (rect_empty(cr))
 		return;
 	LCell *ce = cell(l, r, c);
+	if (l->ldef) {
+		// lDrawMsg(message, selected, &cellRect, cell, dataOffset, dataLen, list)
+		lsync(l);
+		uint32_t rb = gcalloc(8);
+		PUTRECT(rb, cell_rect(l, r, c));
+		uint32_t save = ppc_shim_call("GetQDGlobalsThePort", 0, NULL);
+		SHIM_CALL("SetPort", p->tok);
+		Rgn *clip = rgn_new();
+		rgn_copy(clip, p->clip);
+		rgn_sect_rect(p->clip, cr);
+		uint32_t v[7] = {1, ce && ce->sel ? 1 : 0, rb, (uint32_t)(uint16_t)r << 16 | (uint16_t)c,
+		                 (uint32_t)cell_off(l, r * l->cols + c), (uint32_t)(ce ? ce->n : 0), l->h};
+		ppc_callback(l->ldef, 7, v);
+		rgn_copy(p->clip, clip);
+		rgn_free(clip);
+		if (save)
+			SHIM_CALL("SetPort", save);
+		gfree(rb);
+		return;
+	}
 	Paint bg = {NULL, p->bg, p->bg, 8};
 	static const uint8_t black[8] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	bg.pat = black;
@@ -160,6 +218,8 @@ static void draw_all(List *l)
 {
 	if (!l->drawing || !l->port)
 		return;
+	if (l->ldef)
+		lload(l);
 	Port *p = l->port;
 	Paint white = {NULL, {0xffff, 0xffff, 0xffff}, {0xffff, 0xffff, 0xffff}, 8};
 	static const uint8_t black[8] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
@@ -271,11 +331,11 @@ static void sh_LNew(PPC *c)
 	RET(l->h);
 }
 // CreateCustomList(rView, dataBounds, Point cellSize, const ListDefSpec *, window, drawIt, hasGrow,
-// scrollHoriz, scrollVert, ListHandle *): the standard list (custom definitions are not run); the
+// scrollHoriz, scrollVert, ListHandle *): a user-procedure definition draws the cells; the
 // last two arguments are past the eight argument registers, at r1 + 56 and r1 + 60
 static void sh_CreateCustomList(PPC *c)
 {
-	uint32_t out = LD32(c->r[1] + 60), vs = LD32(c->r[1] + 56);
+	uint32_t out = LD32(c->r[1] + 60), vs = LD32(c->r[1] + 56), spec = A(3);
 	uint32_t a[9] = {A(0), A(1), A(2), 0, A(4), A(5), A(6), A(7), vs};
 	for (int i = 0; i < 8; i++)
 		c->r[3 + i] = a[i];
@@ -283,6 +343,15 @@ static void sh_CreateCustomList(PPC *c)
 	ST32(c->r[1] + 56, vs);      // LNew reads its ninth argument from the same place
 	sh_LNew(c);
 	ST32(c->r[1] + 56, save);
+	List *l = L(c->r[3]);
+	if (l && spec && LD32(spec) == 0 && LD32(spec + 4)) {   // kListDefUserProcType
+		l->ldef = LD32(spec + 4);
+		uint32_t v[7] = {0, 0, 0, 0, 0, 0, l->h};   // lInitMsg
+		ppc_callback(l->ldef, 7, v);
+		lload(l);
+		lsync(l);
+		draw_all(l);
+	}
 	if (out)
 		ST32(out, c->r[3]);
 	RET(c->r[3] ? 0 : -108);
@@ -293,9 +362,15 @@ static void sh_LDispose(PPC *c)
 	List *l = L(A(0));
 	if (!l)
 		return;
+	if (l->ldef) {
+		uint32_t v[7] = {3, 0, 0, 0, 0, 0, l->h};   // lCloseMsg
+		ppc_callback(l->ldef, 7, v);
+	}
 	for (int i = 0; i < l->rows * l->cols; i++)
 		free(l->cells[i].d);
 	free(l->cells);
+	if (l->cells_h)
+		DisposeHandleG(l->cells_h);
 	hm_del(&lists, l->h);
 	DisposeHandleG(l->h);
 	free(l);
@@ -447,6 +522,22 @@ static void sh_LScroll(PPC *c)
 	if (l)
 		scroll_to(l, l->top + (int16_t)A(1));
 }
+// LAutoScroll(list): the first selected cell scrolled into view
+static void sh_LAutoScroll(PPC *c)
+{
+	List *l = L(A(0));
+	if (!l)
+		return;
+	for (int r = 0; r < l->rows; r++)
+		for (int k = 0; k < l->cols; k++)
+			if (l->cells[r * l->cols + k].sel) {
+				if (r < l->top)
+					scroll_to(l, r);
+				else if (r >= l->top + vis_rows(l))
+					scroll_to(l, r - vis_rows(l) + 1);
+				return;
+			}
+}
 static void sh_LSetDrawingMode(PPC *c)
 {
 	List *l = L(A(1));
@@ -515,16 +606,18 @@ static void sh_LNextCell(PPC *c)
 	QPoint cp = LDPT(A(2));
 	int h = A(0) & 0xff, v = A(1) & 0xff;
 	int r = cp.v, k = cp.h;
+	// the cell advances even past the end, where the result is false: loops
+	// of LGetSelect(true, ...) and LNextCell then stop after the last cell
 	if (h && k + 1 < l->cols)
 		k++;
-	else if (v && r + 1 < l->rows) {
+	else if (v) {
 		r++;
 		if (h)
 			k = 0;
-	} else
-		return RET(0);
+	} else if (h)
+		k++;
 	STPT(A(2), ((QPoint){(int16_t)r, (int16_t)k}));
-	RET(1);
+	RET(r < l->rows && k < l->cols && (h || v));
 }
 static void sh_LLastClick(PPC *c) { List *l = L(A(0)); RET(l ? (uint32_t)((uint16_t)l->last_r << 16 | (uint16_t)l->last_c) : 0xffffffffu); }
 
@@ -656,7 +749,7 @@ static void sh_LClickWrapper(PPC *c)
 static const ShimDef listshims[] = {
 	S(CreateCustomList), S(GetListPort),
 	S(LNew), S(LDispose), S(LAddRow), S(LAddColumn), S(LDelRow), S(LSetCell), S(LAddToCell), S(LGetCell),
-	S(LCellSize), S(LSize), S(LScroll), S(LSetDrawingMode), S(LUpdate), S(LDraw), S(LActivate), S(LSetSelect),
+	S(LCellSize), S(LSize), S(LScroll), S(LAutoScroll), S(LSetDrawingMode), S(LUpdate), S(LDraw), S(LActivate), S(LSetSelect),
 	S(LGetSelect), S(LNextCell), S(LLastClick), {"LClick", sh_LClickWrapper}, S(GetListViewBounds),
 	S(GetListVerticalScrollBar), S(GetListHorizontalScrollBar), S(SetListSelectionFlags), S(GetListSelectionFlags),
 	S(GetListDataBounds), S(GetListVisibleCells), S(GetListCellSize), S(SetListRefCon), S(GetListRefCon),

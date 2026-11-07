@@ -5,6 +5,7 @@
 #import <AppKit/AppKit.h>
 #include "win.h"
 #include "rgn.h"
+#include "hmap.h"
 
 uint32_t cf_tok(CFTypeRef o);
 CFTypeRef cf_obj(uint32_t t);
@@ -438,7 +439,10 @@ static void sh_Microseconds(PPC *c)
 }
 
 // ---- Palette Manager: a direct-color screen has nothing to animate or reserve
-static void sh_GetPalette(PPC *c) { RET(0); }
+// each window's palette, as NSetPalette / SetPalette gave it
+static HMap palettes;
+static void sh_NSetPalette(PPC *c) { hm_put(&palettes, A(0), (void *)(uintptr_t)A(1)); }
+static void sh_GetPalette(PPC *c) { RET((uint32_t)(uintptr_t)hm_get(&palettes, A(0))); }
 static void sh_palette_nop(PPC *c) { (void)c; }
 
 // ---- Font Manager
@@ -665,7 +669,7 @@ static void sh_TETextBox(PPC *c)
 static const ShimDef carbonshims[] = {
 	S(SubPt), S(AddPt), S(Pt2Rect), S(GetPortSpExtra), S(FixRatio), S(GetPortPenLocation), S(TEAutoView), S(GetCTSeed), S(QTNewAtomContainer), S(TETextBox),
 	S(ObscureCursor), S(GetScriptManagerVariable), S(GetPen), S(QDTextBounds),
-	S(FixMul), S(FixDiv), S(FixRound), S(Fix2X), S(X2Fix), S(Microseconds), S(GetPalette), {"NSetPalette", sh_palette_nop},
+	S(FixMul), S(FixDiv), S(FixRound), S(Fix2X), S(X2Fix), S(Microseconds), S(GetPalette), S(NSetPalette), {"SetPalette", sh_NSetPalette},
 	{"ActivatePalette", sh_palette_nop}, S(RealFont), S(GetOutlinePreferred), S(LMGetFractEnable), S(SpaceExtra),
 	S(CharExtra), S(LMGetWidthTabHandle), S(FontMetrics), S(GetPortClipRegion), S(GetPortPenSize), S(IconIDToRgn),
 	S(DeviceLoop),

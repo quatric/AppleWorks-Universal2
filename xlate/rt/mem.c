@@ -253,6 +253,8 @@ static void sh_ReallocateHandle(PPC *c)
 	mem_err = 0;
 }
 static void sh_MemError(PPC *c) { RET((uint32_t)(int32_t)mem_err); }
+static void sh_LMGetMemErr(PPC *c) { RET((uint32_t)(int32_t)mem_err); }
+static void sh_LMSetMemErr(PPC *c) { mem_err = (int16_t)A(0); }
 static void sh_MaxBlock(PPC *c) { RET(64u << 20); }
 static void sh_MoreMasterPointers(PPC *c) { (void)c; }
 static void sh_BlockMove(PPC *c) { memmove(G(A(1)), G(A(0)), A(2)); }
@@ -302,7 +304,7 @@ static void sh_mem_ok(PPC *c) { (void)c; mem_err = 0; }   // MoveHHi, HPurge: no
 static const ShimDef memshims[] = {
 	S(NewPtr), S(NewPtrClear), S(DisposePtr), S(NewHandle), S(NewHandleClear), S(TempNewHandle), S(DisposeHandle),
 	S(GetHandleSize), S(SetHandleSize), S(HLock), S(HUnlock), S(HNoPurge), S(HGetState), S(HSetState),
-	S(EmptyHandle), S(ReallocateHandle), S(MemError), S(MaxBlock), S(MoreMasterPointers), S(BlockMove),
+	S(EmptyHandle), S(ReallocateHandle), S(MemError), S(LMGetMemErr), S(LMSetMemErr), S(MaxBlock), S(MoreMasterPointers), S(BlockMove),
 	{"BlockMoveData", sh_BlockMove}, {"HLockHi", sh_HLock}, S(HandToHand), S(HandAndHand), S(PtrToHand),
 	S(PtrAndHand), S(SetGrowZone), S(GZSaveHnd),
 	{"NewGrowZoneUPP", sh_UPP}, {"DisposeGrowZoneUPP", sh_nop},

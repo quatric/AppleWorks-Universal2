@@ -824,6 +824,12 @@ static void sh_DrawPicture(PPC *c)
 	uint32_t h = A(0);
 	if (!is_handle(h) || !HP(h) || !qd_port)
 		return;
+	if (getenv("PPC_DBG_COPY")) {
+		QRect r = RECT(A(1));
+		ppc_log("DrawPicture %08x -> port %08x dst %d,%d,%d,%d clip %d,%d,%d,%d vis %d,%d,%d,%d", h, qd_port->tok, r.top, r.left, r.bottom, r.right,
+			qd_port->clip->bbox.top, qd_port->clip->bbox.left, qd_port->clip->bbox.bottom, qd_port->clip->bbox.right,
+			qd_port->vis->bbox.top, qd_port->vis->bbox.left, qd_port->vis->bbox.bottom, qd_port->vis->bbox.right);
+	}
 	pict_draw(qd_port, G(HP(h)), HSize(h), RECT(A(1)));
 }
 

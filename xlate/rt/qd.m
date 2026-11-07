@@ -1017,6 +1017,8 @@ static void sh_RGBForeColor(PPC *c) { if (CUR) CUR->fg = LDRGB(A(0)); }
 static void sh_RGBBackColor(PPC *c) { if (CUR) CUR->bg = LDRGB(A(0)); }
 static void sh_GetForeColor(PPC *c) { if (CUR) STRGB(A(0), CUR->fg); }
 static void sh_GetBackColor(PPC *c) { if (CUR) STRGB(A(0), CUR->bg); }
+static void sh_GetPortForeColor(PPC *c) { Port *p = PORT(A(0)); if (p) STRGB(A(1), p->fg); RET(A(1)); }
+static void sh_HiliteColor(PPC *c) { if (CUR) CUR->hilite = LDRGB(A(0)); }
 static void sh_OpColor(PPC *c) { if (CUR) CUR->op = LDRGB(A(0)); }
 static void sh_InvertColor(PPC *c) { RGB16 v = LDRGB(A(0)); STRGB(A(0), (RGB16){(uint16_t)~v.r, (uint16_t)~v.g, (uint16_t)~v.b}); }
 static RGB16 classic_color(int32_t k)
@@ -1636,6 +1638,7 @@ static void sh_NewGWorld(PPC *c)
 		p->shadow_state = 0;
 		pixmap_write(p);
 	}
+	if (getenv("PPC_DBG_COPY")) ppc_log("NewGWorld %08x depth %d rect %d,%d,%d,%d", p->tok, depth, r.top, r.left, r.bottom, r.right);
 	ST32(A(0), p->tok);
 	RET(0);
 }
@@ -1747,6 +1750,12 @@ static void sh_CopyMask(PPC *c)
 				nonwhite += (bm_get(&sb, x, y) | 0xff) != 0xffffffffu;
 		ppc_log("CopyMask: mask depth %d base %08x %d set; src depth %d base %08x %d non-white; rgn %d rects",
 			m.depth, m.base, set, sb.depth, sb.base, nonwhite, g.n);
+	}
+	if (getenv("PPC_DBG_COPY")) {
+		Port *dp = port_of_bits(A(2));
+		ppc_log("CopyMask -> port %08x dst %d,%d,%d,%d mask %d,%d,%d,%d clip %d,%d,%d,%d rgn %d rects",
+			dp ? dp->tok : 0, dr.top, dr.left, dr.bottom, dr.right, mr.top, mr.left, mr.bottom, mr.right,
+			dp ? dp->clip->bbox.top : 0, dp ? dp->clip->bbox.left : 0, dp ? dp->clip->bbox.bottom : 0, dp ? dp->clip->bbox.right : 0, g.n);
 	}
 	qd_copybits(A(0), A(2), RECT(A(3)), dr, 0, &g);
 	free(g.r);
@@ -1949,7 +1958,7 @@ static const ShimDef qdshims[] = {
 	S(QDError), S(QDDone), S(LockPortBits), {"UnlockPortBits", sh_LockPortBits}, S(SetOrigin), S(ClipRect), S(SetClip),
 	S(GetClip), S(GlobalToLocal), S(LocalToGlobal), S(MoveTo), S(Move), S(LineTo), S(Line), S(PenSize), S(PenMode),
 	S(PenPat), S(BackPat), S(PenNormal), S(HidePen), S(ShowPen), S(GetPenState), S(SetPenState), S(RGBForeColor),
-	S(RGBBackColor), S(GetForeColor), S(GetBackColor), S(OpColor), S(InvertColor), S(ForeColor), S(BackColor),
+	S(RGBBackColor), S(GetForeColor), S(GetPortForeColor), S(HiliteColor), S(GetBackColor), S(OpColor), S(InvertColor), S(ForeColor), S(BackColor),
 	S(GetGray), S(FrameRect), S(PaintRect), S(EraseRect), S(InvertRect), S(FillRect), S(FrameOval), S(EraseOval),
 	S(PaintOval), S(FrameRoundRect), S(FrameArc), S(PaintArc), S(FillArc), S(OpenPoly), S(ClosePoly), S(KillPoly),
 	S(FramePoly), S(PaintPoly), S(FillPoly), S(FrameRgn), S(PaintRgn), S(EraseRgn), S(InvertRgn), S(FillRgn),
