@@ -63,8 +63,25 @@ static XLWinDelegate *delegate;
 	CGContextDrawImage(cg, CGRectMake(0, 0, w, h), img);
 	CGContextRestoreGState(cg);
 	CGImageRelease(img);
-	CGColorSpaceRelease(cs);
 	CGDataProviderRelease(dp);
+	if (win->skirt && win->skirt_pix) {
+		// the custom frame below the content, transparent outside its structure region
+		CGContextClearRect(cg, CGRectMake(0, h, b.size.width, win->skirt));
+		CGContextRef bc = CGBitmapContextCreate(win->skirt_pix, w, win->skirt, 8, (size_t)w * 4, cs,
+			kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+		CGImageRef si = bc ? CGBitmapContextCreateImage(bc) : NULL;
+		if (si) {
+			CGContextSaveGState(cg);
+			CGContextTranslateCTM(cg, 0, h + win->skirt);
+			CGContextScaleCTM(cg, 1, -1);
+			CGContextDrawImage(cg, CGRectMake(0, 0, w, win->skirt), si);
+			CGContextRestoreGState(cg);
+			CGImageRelease(si);
+		}
+		if (bc)
+			CGContextRelease(bc);
+	}
+	CGColorSpaceRelease(cs);
 }
 - (QPoint)globalOf:(NSEvent *)e
 {
@@ -268,6 +285,11 @@ void win_invalidate(Win *w, QRect r)
 Win *win_at(int h, int v)
 {
 	for (Win *w = windows; w; w = w->next) {
+		if (ppc_verbose >= 3) {
+			NSRect f = ((NSWindow *)w->ns).frame;
+			ppc_log("win_at %d,%d: %08x vis %d coll %d frame %.0f,%.0f %.0fx%.0f cy %.0f", h, v, w->tok, w->visible, w->collapsed,
+				f.origin.x, f.origin.y, f.size.width, f.size.height, qd_cocoa_y(v));
+		}
 		if (!w->visible || w->collapsed)
 			continue;
 		NSRect f = ((NSWindow *)w->ns).frame;
@@ -307,11 +329,148 @@ static NSRect cocoa_content(QRect r)
 {
 	return NSMakeRect(r.left, qd_cocoa_y(r.bottom), r.right - r.left, r.bottom - r.top);
 }
+// the Cocoa content rectangle of a window: its content plus any custom frame drawn below it
+static NSRect win_cocoa_rect(Win *w)
+{
+	QRect r = w->frame;
+	r.bottom = (int16_t)(r.bottom + w->skirt);
+	return cocoa_content(r);
+}
 
 static void ns_title(Win *w)
 {
 	NSString *t = mac_ns(w->title + 1, w->title[0]);
 	((NSWindow *)w->ns).title = t;
+}
+
+// ---- custom window definitions (CreateCustomWindow) -----------------------------------------------
+// The definition procedure answers region queries and draws the frame. Cocoa draws the title bar;
+// what the definition draws below the content (AppleWorks' Starting Points tabs) is shown in a strip
+// under the content view.
+
+static int wdef_busy;   // inside a region query: a nested query answers the standard way
+
+static uint32_t wdef_call(Win *w, int msg, uint32_t param)
+{
+	uint32_t a[4] = {0, w->tok, (uint32_t)msg, param};
+	if (msg == 8)
+		wdef_busy++;
+	uint32_t r = ppc_callback(w->wdef, 4, a);
+	if (msg == 8)
+		wdef_busy--;
+	return r;
+}
+static int wdef_drawing;   // inside wdef_render's draw message
+
+// kWindowMsgGetRegion: the region (global coordinates) into g; 0 if the definition gave none
+static int wdef_region(Win *w, int code, Rgn *g)
+{
+	static uint32_t rh, rec;
+	static Rgn *rg;
+	if (!rh) {
+		rh = rgn_handle(&rg);
+		rec = gcalloc(8);
+	}
+	rgn_set_empty(rg);
+	rgn_sync(rh);
+	ST32(rec, rh);
+	ST16(rec + 4, (uint16_t)code);
+	wdef_call(w, 8, rec);
+	Rgn *got = RGN(rh);
+	if (!got || rgn_empty(got))
+		return 0;
+	rgn_copy(g, got);
+	return 1;
+}
+
+static void wdef_render(Win *w)
+{
+	if (!w->wdef || !w->visible || wdef_busy || wdef_drawing)
+		return;
+	Rgn *s = rgn_new();
+	int skirt = 0;
+	if (wdef_region(w, 32, s))   // kWindowStructureRgn
+		skirt = s->bbox.bottom - w->frame.bottom;
+	if (skirt > 64)
+		skirt = 64;
+	if (ppc_verbose >= 2)
+		ppc_log("wdef_render %08x: structure %d,%d,%d,%d content %d,%d,%d,%d skirt %d", w->tok, s->bbox.top, s->bbox.left,
+			s->bbox.bottom, s->bbox.right, w->frame.top, w->frame.left, w->frame.bottom, w->frame.right, skirt);
+	int wd = w->frame.right - w->frame.left;
+	if (skirt > 0 && wd > 0) {
+		// the frame, drawn by the definition into a port covering the structure, in the window port's
+		// local coordinates (the content's top left is 0,0; the frame lies around it)
+		QRect sb = rect_off(s->bbox, -w->frame.left, -w->frame.top);
+		Port *fp = port_new(0, 0, sb, 1);
+		int ht = w->frame.bottom - w->frame.top;
+		fp->portRect = (QRect){0, 0, (int16_t)ht, (int16_t)wd};   // the port rectangle is the content
+		rgn_set_rect(fp->vis, sb);                                 // the frame is drawn outside it
+		PUTRECT(fp->tok + 16, fp->portRect);                       // the CGrafPort copy of it
+		Port *save = w->port, *savecur = qd_port;
+		w->port = fp;
+		ST32(w->tok, fp->tok);
+		qd_port = fp;
+		if (ppc_verbose >= 2)
+			ppc_log("wdef_render: frame port %08x", fp->tok);
+		wdef_drawing = 1;
+		wdef_call(w, 0, 0);   // kWindowMsgDraw, the whole frame
+		wdef_drawing = 0;
+		if (ppc_verbose >= 2)
+			ppc_log("wdef_render: drawn");
+		w->port = save;
+		ST32(w->tok, save->tok);
+		qd_port = savecur;
+		uint32_t *px = realloc(w->skirt_pix, (size_t)wd * skirt * 4);
+		for (int y = 0; y < skirt; y++)
+			for (int x = 0; x < wd; x++) {
+				int gh = w->frame.left + x, gv = w->frame.bottom + y;          // global
+				int lh = x, lv = w->frame.bottom - w->frame.top + y;            // local
+				uint32_t v = 0;
+				if (rgn_contains(s, gh, gv) && lh >= sb.left && lh < sb.right && lv >= sb.top && lv < sb.bottom) {
+					uint32_t q = LD32(fp->pix + (uint32_t)((lv - sb.top) * fp->rowBytes + (lh - sb.left) * 4));
+					v = 0xff000000u | (q & 0xffffff);   // guest xRGB -> ARGB
+				}
+				px[y * wd + x] = v;
+			}
+		w->skirt_pix = px;
+		if (getenv("PPC_DBG_SKIRT")) {
+			char fn[256];
+			snprintf(fn, sizeof fn, "%s/skirt_%08x.raw", getenv("PPC_DBG_SKIRT"), w->tok);
+			FILE *f = fopen(fn, "wb");
+			if (f) {
+				fwrite(&wd, 4, 1, f);
+				fwrite(&skirt, 4, 1, f);
+				fwrite(px, 4, (size_t)wd * skirt, f);
+				fclose(f);
+			}
+		}
+		gfree(fp->pix);
+		port_free(fp);
+	}
+	rgn_free(s);
+	if (skirt < 0)
+		skirt = 0;
+	if (skirt != w->skirt) {
+		w->skirt = skirt;
+		NSWindow *nw = w->ns;
+		if (skirt) {
+			nw.opaque = NO;
+			nw.backgroundColor = NSColor.clearColor;
+		}
+		[nw setFrame:[nw frameRectForContentRect:win_cocoa_rect(w)] display:NO];
+		[(XLWinView *)w->view setFrame:NSMakeRect(0, 0, wd, w->frame.bottom - w->frame.top + skirt)];
+	}
+	[(XLWinView *)w->view setNeedsDisplay:YES];
+}
+
+// kWindowMsgHitTest for a global point: the FindWindow part code, -1 if the definition has none
+static int wdef_part(Win *w, QPoint p)
+{
+	if (!w->wdef || wdef_busy)
+		return -1;
+	static const int8_t parts[13] = {0, 3, 4, 5, 6, 7, 8, -1, -1, 11, 12, 13, 15};
+	uint32_t hit = wdef_call(w, 1, (uint32_t)(uint16_t)p.v << 16 | (uint16_t)p.h);
+	return hit < 13 ? parts[hit] : -1;
 }
 
 static Win *win_create(int wclass, uint32_t attrs, QRect bounds, const uint8_t *title, int visible, uint32_t refCon, uint32_t behind)
@@ -364,7 +523,7 @@ static Win *win_create(int wclass, uint32_t attrs, QRect bounds, const uint8_t *
 	if (panel) {
 		nw.level = NSFloatingWindowLevel;
 		((NSPanel *)nw).floatingPanel = YES;
-		((NSPanel *)nw).hidesOnDeactivate = YES;
+		((NSPanel *)nw).hidesOnDeactivate = !getenv("PPC_STAY_ACTIVE");   // test runs are never frontmost
 		((NSPanel *)nw).becomesKeyOnlyIfNeeded = YES;
 	} else if (wclass >= 1 && wclass <= 4)
 		nw.level = NSModalPanelWindowLevel;
@@ -410,6 +569,7 @@ void win_show(Win *w)
 	else
 		[nw orderFront:nil];
 	win_invalidate(w, w->port->portRect);
+	wdef_render(w);
 	if (win_front(1) == w && !is_floating(w) && oldfront != w) {
 		if (oldfront && !is_floating(oldfront))
 			ev_activate(oldfront, 0);
@@ -454,6 +614,10 @@ static void select_window(Win *w)
 static void win_dispose(Win *w)
 {
 	int wasfront = win_front(1) == w;
+	if (w->wdef)
+		wdef_call(w, 4, 0);   // kWindowMsgCleanUp
+	free(w->skirt_pix);
+	w->skirt_pix = NULL;
 	if (w->root)
 		ctl_dispose_all(w);
 	list_remove(w);
@@ -489,10 +653,11 @@ static void size_window(Win *w, int wd, int ht)
 	w->frame.right = (int16_t)(w->frame.left + wd);
 	w->frame.bottom = (int16_t)(w->frame.top + ht);
 	NSWindow *nw = w->ns;
-	NSRect cr = cocoa_content(w->frame);
+	NSRect cr = win_cocoa_rect(w);
 	[nw setFrame:[nw frameRectForContentRect:cr] display:NO];
-	[(XLWinView *)w->view setFrame:NSMakeRect(0, 0, wd, ht)];
+	[(XLWinView *)w->view setFrame:NSMakeRect(0, 0, wd, ht + w->skirt)];
 	[(XLWinView *)w->view setNeedsDisplay:YES];
+	wdef_render(w);
 }
 
 static void move_window(Win *w, int h, int v)
@@ -500,7 +665,7 @@ static void move_window(Win *w, int h, int v)
 	int wd = w->frame.right - w->frame.left, ht = w->frame.bottom - w->frame.top;
 	w->frame = (QRect){(int16_t)v, (int16_t)h, (int16_t)(v + ht), (int16_t)(h + wd)};
 	NSWindow *nw = w->ns;
-	NSRect cr = cocoa_content(w->frame);
+	NSRect cr = win_cocoa_rect(w);
 	[nw setFrame:[nw frameRectForContentRect:cr] display:NO];
 }
 
@@ -613,8 +778,13 @@ static void sh_CreateCustomWindow(PPC *c)
 {
 	// CreateCustomWindow(const WindowDefSpec *, class, attributes, const Rect *, WindowRef *)
 	Win *w = win_create((int)A(1), A(2), RECT(A(3)), NULL, 0, 0, 0xffffffffu);
-	w->wdef = A(0) ? LD32(A(0) + 4) : 0;
+	// WindowDefSpec { defType; union { proc, classRef, procID } }: only kWindowDefProcPtr (0) runs here
+	w->wdef = A(0) && LD32(A(0)) == 0 ? LD32(A(0) + 4) : 0;
 	ST32(A(4), w->tok);
+	if (ppc_verbose && A(0))
+		ppc_log("CreateCustomWindow: defType %u proc %08x", LD32(A(0)), w->wdef);
+	if (w->wdef)
+		wdef_call(w, 3, 0);   // kWindowMsgInitialize
 	RET(0);
 }
 
@@ -622,7 +792,7 @@ static void sh_DisposeWindow(PPC *c) { Win *w = WIN(A(0)); if (w) win_dispose(w)
 static void sh_ShowWindow(PPC *c) { Win *w = WIN(A(0)); if (w) win_show(w); }
 static void sh_HideWindow(PPC *c) { Win *w = WIN(A(0)); if (w) win_hide(w); }
 static void sh_SelectWindow(PPC *c) { Win *w = WIN(A(0)); if (w) select_window(w); }
-static void sh_HiliteWindow(PPC *c) { Win *w = WIN(A(0)); if (w) w->hilited = A(1) & 0xff; }
+static void sh_HiliteWindow(PPC *c) { Win *w = WIN(A(0)); if (w && w->hilited != (int)(A(1) & 0xff)) { w->hilited = A(1) & 0xff; wdef_render(w); } }
 static void sh_SendBehind(PPC *c)
 {
 	Win *w = WIN(A(0)), *b = WIN(A(1));
@@ -701,6 +871,36 @@ static void sh_SetPortWindowPort(PPC *c) { Win *w = WIN(A(0)); if (w) qd_port = 
 static void sh_GetWindowFromPort(PPC *c) { Port *p = PORT(A(0)); RET(p && p->win ? p->win->tok : 0); }
 static void sh_IsWindowVisible(PPC *c) { Win *w = WIN(A(0)); RET(w && w->visible); }
 static void sh_IsValidWindowPtr(PPC *c) { RET(WIN(A(0)) != NULL); }
+// GetWindowFeatures(window, UInt32 *): the definition's own answer, or what a standard frame has:
+// kWindowCanGrow 1, CanZoom 2, CanCollapse 4, CanGetWindowRegion 0x20, HasTitleBar 0x40
+static void sh_GetWindowFeatures(PPC *c)
+{
+	Win *w = WIN(A(0));
+	if (!w) {
+		RET(-5600);
+		return;
+	}
+	uint32_t f = 0;
+	if (w->wdef) {
+		uint32_t b = gcalloc(4);
+		wdef_call(w, 7, b);   // kWindowMsgGetFeatures
+		f = LD32(b);
+		gfree(b);
+	} else {
+		NSWindowStyleMask m = ((NSWindow *)w->ns).styleMask;
+		if (m & NSWindowStyleMaskResizable)
+			f |= 1;
+		if (w->attrs & 6)
+			f |= 2;
+		if (m & NSWindowStyleMaskTitled)
+			f |= 4 | 0x40;
+		f |= 0x20;
+	}
+	if (A(1))
+		ST32(A(1), f);
+	RET(0);
+}
+static void sh_IsWindowCollapsable(PPC *c) { Win *w = WIN(A(0)); RET(w && (((NSWindow *)w->ns).styleMask & NSWindowStyleMaskTitled)); }
 static void sh_IsWindowCollapsed(PPC *c) { Win *w = WIN(A(0)); RET(w && w->collapsed); }
 static void sh_CollapseWindow(PPC *c)
 {
@@ -743,7 +943,15 @@ static void sh_GetWindowBounds(PPC *c)
 		RET(-5600);
 		return;
 	}
-	PUTRECT(A(2), region_rect(w, (int)A(1)));
+	int code = (int)A(1);
+	QRect r = region_rect(w, code);
+	if (w->wdef && code != 33 && code != 34 && code != 40 && !wdef_busy) {
+		Rgn *g = rgn_new();
+		if (wdef_region(w, code, g))
+			r = g->bbox;
+		rgn_free(g);
+	}
+	PUTRECT(A(2), r);
 	RET(0);
 }
 static void sh_GetWindowPortBounds(PPC *c)
@@ -761,7 +969,9 @@ static void sh_GetWindowRegion(PPC *c)
 		RET(-50);
 		return;
 	}
-	rgn_set_rect(g, region_rect(w, (int)A(1)));
+	int code = (int)A(1);
+	if (!(w->wdef && code != 33 && code != 34 && code != 40 && !wdef_busy && wdef_region(w, code, g)))
+		rgn_set_rect(g, region_rect(w, code));
 	rgn_sync(A(2));
 	RET(0);
 }
@@ -914,7 +1124,15 @@ static void sh_GetWindowEventTarget(PPC *c)
 }
 
 // FindWindow(Point, WindowRef *) -> part
+static void sh_FindWindow_(PPC *c);
 static void sh_FindWindow(PPC *c)
+{
+	QPoint p = PT(A(0));
+	sh_FindWindow_(c);
+	if (ppc_verbose >= 2)
+		ppc_log("FindWindow %d,%d -> part %d window %08x", p.h, p.v, c->r[3], A(1) ? LD32(A(1)) : 0);
+}
+static void sh_FindWindow_(PPC *c)
 {
 	QPoint p = PT(A(0));
 	uint32_t out = A(1);
@@ -937,6 +1155,15 @@ static void sh_FindWindow(PPC *c)
 	}
 	if (out)
 		ST32(out, w->tok);
+	if (w->skirt && p.v >= w->frame.bottom && p.h >= w->frame.left && p.h < w->frame.right) {
+		int part = wdef_part(w, p);
+		if (part >= 0) {
+			if (!part && out)
+				ST32(out, 0);
+			RET((uint32_t)part);
+			return;
+		}
+	}
 	if (p.v >= w->frame.top && p.v < w->frame.bottom && p.h >= w->frame.left && p.h < w->frame.right)
 		RET(3);   // inContent
 	else
@@ -954,7 +1181,7 @@ static const ShimDef winshims[] = {
 	S(DrawGrowIcon), S(SetWindowContentColor), S(SetWindowStandardState), S(SetWindowUserState), S(MoveWindow),
 	S(SizeWindow), S(DragWindow), S(GrowWindow), S(TrackGoAway), S(TrackBox), S(ZoomWindow), S(RepositionWindow),
 	S(HideFloatingWindows), S(ShowFloatingWindows), S(IsWindowPathSelectClick), S(WindowPathSelect),
-	S(TrackWindowProxyDrag), S(GetWindowEventTarget), S(FindWindow),
+	S(TrackWindowProxyDrag), S(GetWindowEventTarget), S(FindWindow), S(GetWindowFeatures), S(IsWindowCollapsable),
 	{"NewWindowDefUPP", sh_DrawGrowIcon},
 };
 REGISTER(winshims)

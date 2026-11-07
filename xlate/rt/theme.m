@@ -3,6 +3,8 @@
 #import <Carbon/Carbon.h>
 #include "qd.h"
 
+void theme_font_metrics(int id, int *size, int *bold);
+
 static RGB16 brush_color(int brush)
 {
 	switch (brush) {
@@ -76,15 +78,8 @@ static void sh_GetThemeFont(PPC *c)
 {
 	// GetThemeFont(fontID, script, Str255 name, SInt16 *size, Style *style)
 	int id = (int16_t)A(0);
-	int size = 13, style = 0;
-	switch (id) {
-	case 1: case 2: case 4: case 7: size = 11; style = id == 2 ? 1 : 0; break;   // small system (emphasized), small emphasized
-	case 3: size = 12; break;                                                   // views
-	case 5: case 6: case 100: case 101: size = 10; break;                       // mini, label
-	default: break;
-	}
-	if (id == 4)
-		style = 1;
+	int size, style;
+	theme_font_metrics(id, &size, &style);
 	if (A(2)) {
 		static const char nm[] = "Lucida Grande";
 		ST8(A(2), (uint8_t)(sizeof nm - 1));
@@ -289,19 +284,30 @@ static NSString *cfstr(uint32_t t)
 	return s && CFGetTypeID(s) == CFStringGetTypeID() ? (__bridge NSString *)s : @"";
 }
 
+// Appearance theme fonts: kThemeSystemFont 0, Small 1, SmallEmphasized 2, Views 3, EmphasizedSystem 4,
+// Application 5, Label 6, MenuTitle..WindowTitle 100-104, PushButton 105, UtilityWindowTitle 106,
+// AlertHeader 107, Toolbar 108, MiniSystem 109
+void theme_font_metrics(int id, int *size, int *bold)
+{
+	int sz = 13, b = 0;
+	switch (id) {
+	case 1: case 6: case 106: case 108: sz = 11; break;
+	case 2: sz = 11; b = 1; break;
+	case 3: sz = 12; break;
+	case 4: case 107: b = 1; break;
+	case 5: sz = 12; break;
+	case 109: sz = 9; break;
+	default: break;
+	}
+	*size = sz, *bold = b;
+}
+
 typedef struct { int font, size, face; } SavedFont;
 static SavedFont theme_font_set(Port *p, int id)
 {
 	SavedFont s = {p->txFont, p->txSize, p->txFace};
-	int size = 13, face = 0;
-	if (id == 1 || id == 2 || id == 4 || id == 7)
-		size = 11;
-	else if (id == 3)
-		size = 12;
-	else if (id == 5 || id == 6 || id == 100 || id == 101)
-		size = 10;
-	if (id == 2 || id == 4)
-		face = 1;
+	int size, face;
+	theme_font_metrics(id, &size, &face);
 	p->txFont = qd_font_num(@"Lucida Grande");
 	p->txSize = size;
 	p->txFace = face;
@@ -403,7 +409,34 @@ static void sh_DrawThemeTextBox(PPC *c)
 	RET(0);
 }
 
+// DrawThemeButton(const Rect *, ThemeButtonKind, const ThemeButtonDrawInfo *newInfo, prevInfo, eraseProc,
+// labelProc, userData): ThemeButtonDrawInfo { state, value, adornment } as UInt32, UInt16, UInt16
+static void sh_DrawThemeButton(PPC *c)
+{
+	Port *p = qd_port;
+	if (!p || !A(0)) {
+		RET(0);
+		return;
+	}
+	QRect r = RECT(A(0));
+	uint32_t ni = A(2);
+	HIThemeButtonDrawInfo bi = {0, ni ? LD32(ni) : kThemeStateActive, (ThemeButtonKind)(uint16_t)A(1),
+		ni ? LD16(ni + 4) : kThemeButtonOff, ni ? LD16(ni + 6) : kThemeAdornmentNone, {0}};
+	CGContextRef cg = qd_cg_begin(p);
+	CGRect cr = cgr(r);
+	HIThemeDrawButton(&cr, &bi, cg, kHIThemeOrientationNormal, NULL);
+	qd_cg_end(p);
+	qd_dirty(p, (QRect){(int16_t)(r.top - 2), (int16_t)(r.left - 2), (int16_t)(r.bottom + 2), (int16_t)(r.right + 2)});
+	if (A(5)) {
+		// the label procedure draws the title: (bounds, kind, info, userData, depth, isColor)
+		uint32_t a[6] = {A(0), A(1), A(2), A(6), 32, 1};
+		ppc_callback(A(5), 6, a);
+	}
+	RET(0);
+}
+
 static const ShimDef themeshims[] = {
+	S(DrawThemeButton),
 	S(TruncateThemeText), S(DrawThemeTextBox),
 	S(RegisterAppearanceClient), S(UnregisterAppearanceClient),
 	S(SetThemeBackground), S(ApplyThemeBackground), S(SetThemePen), S(SetThemeTextColor), S(GetThemeTextColor),

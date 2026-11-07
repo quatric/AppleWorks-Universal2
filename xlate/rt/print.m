@@ -272,7 +272,28 @@ static void sh_PMConvertOldPrintRecord(PPC *c)
 	RET(0);
 }
 
+// PMGetScale(PMPageFormat, double *): percent; PMSetScale(PMPageFormat, double) takes f1
+static void sh_PMGetScale(PPC *c)
+{
+	union { double d; uint64_t u; } v = {100.0};
+	ST32(A(1), (uint32_t)(v.u >> 32));
+	ST32(A(1) + 4, (uint32_t)v.u);
+	RET(0);
+}
+static void sh_PMSetScale(PPC *c) { RET(0); }
+// PMGetResolution(PMPageFormat, PMResolution *): { double hRes, vRes }
+static void sh_PMGetResolution(PPC *c)
+{
+	union { double d; uint64_t u; } v = {72.0};
+	for (int i = 0; i < 2; i++) {
+		ST32(A(1) + 8 * (uint32_t)i, (uint32_t)(v.u >> 32));
+		ST32(A(1) + 8 * (uint32_t)i + 4, (uint32_t)v.u);
+	}
+	RET(0);
+}
+
 static const ShimDef printshims[] = {
+	S(PMGetScale), S(PMSetScale), S(PMGetResolution),
 	S(PMCreateSession), S(PMCreatePageFormat), S(PMCreatePrintSettings), S(PMRelease), S(PMRetain),
 	{"PMSessionDefaultPageFormat", sh_PMok}, {"PMSessionDefaultPrintSettings", sh_PMok},
 	{"PMSessionValidatePageFormat", sh_PMValidate}, {"PMSessionValidatePrintSettings", sh_PMValidate},

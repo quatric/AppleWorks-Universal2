@@ -10,6 +10,7 @@ uint32_t cf_tok(CFTypeRef o);
 CFTypeRef cf_obj(uint32_t t);
 uint32_t res_get(uint32_t type, int16_t id, int one);
 QRect qd_screen_rect(void);
+void theme_font_metrics(int id, int *size, int *bold);
 
 // ---- timers
 
@@ -350,9 +351,9 @@ static void sh_GetThemeTextDimensions(PPC *c)
 {
 	CFTypeRef s = cf_obj(A(0));
 	NSString *str = s && CFGetTypeID(s) == CFStringGetTypeID() ? (__bridge NSString *)s : @"";
-	uint16_t id = (uint16_t)A(1);
-	CGFloat size = id == 1 || id == 4 || id == 6 ? 11 : id == 5 || id == 109 ? 9 : 13;   // small, mini, else system
-	NSFont *f = id == 2 || id == 4 ? [NSFont boldSystemFontOfSize:size] : [NSFont systemFontOfSize:size];
+	int size, bold;
+	theme_font_metrics((int16_t)A(1), &size, &bold);
+	NSFont *f = bold ? [NSFont boldSystemFontOfSize:size] : [NSFont systemFontOfSize:size];
 	NSDictionary *at = @{NSFontAttributeName: f};
 	NSSize sz;
 	int wrap = (A(3) & 0xff) && A(4) && (int16_t)LD16(A(4) + 2) > 0;
@@ -374,7 +375,194 @@ static void sh_GetThemeTextDimensions(PPC *c)
 static void sh_IsPortColor(PPC *c) { RET(1); }
 static void sh_WakeUpProcess(PPC *c) { RET(0); }
 
+// InvokeXxxUPP(args..., upp): on PowerPC a UPP is the procedure's transition vector
+static void invoke_upp(PPC *c, int n)
+{
+	uint32_t a[8];
+	for (int i = 0; i < n; i++)
+		a[i] = c->r[3 + i];
+	RET(ppc_callback(c->r[3 + n], n, a));
+}
+static void sh_InvokeWindowDefUPP(PPC *c) { invoke_upp(c, 4); }   // (varCode, window, message, param)
+static void sh_InvokeModalFilterUPP(PPC *c) { invoke_upp(c, 3); } // (dialog, event, itemHit)
+static void sh_InvokeQDBitsUPP(PPC *c) { invoke_upp(c, 5); }      // (srcBits, srcRect, dstRect, mode, maskRgn)
+static void sh_InvokeQDCommentUPP(PPC *c) { invoke_upp(c, 3); }   // (kind, dataSize, dataHandle)
+static void sh_InvokeQDRgnUPP(PPC *c) { invoke_upp(c, 2); }       // (verb, rgn)
+static void sh_InvokePMItemUPP(PPC *c) { invoke_upp(c, 2); }      // (dialog, item)
+// (event, reply, mode, priority, timeout, idleProc, filterProc, refCon): the UPP is the ninth argument,
+// past the eight argument registers, in the caller's parameter area at r1 + 24 + 32
+static void sh_InvokeOSASendUPP(PPC *c)
+{
+	uint32_t a[8];
+	for (int i = 0; i < 8; i++)
+		a[i] = c->r[3 + i];
+	RET(ppc_callback(LD32(c->r[1] + 56), 8, a));
+}
+
+// DeviceLoop(drawingRgn, DeviceLoopDrawingUPP, userData, flags): one 32-bit color screen, so the
+// procedure runs once as (depth, deviceFlags, GDHandle, userData)
+static void sh_DeviceLoop(PPC *c)
+{
+	uint32_t a[4] = {32, 1 << 0 /* gdDevType: color */, SHIM_CALL("GetMainDevice", 0), A(2)};
+	ppc_callback(A(1), 4, a);
+}
+
+// ---- Fixed-point math (16.16)
+
+static void sh_FixMul(PPC *c) { RET((uint32_t)(int32_t)(((int64_t)(int32_t)A(0) * (int32_t)A(1) + 0x8000) >> 16)); }
+static void sh_FixDiv(PPC *c)
+{
+	int32_t a = (int32_t)A(0), b = (int32_t)A(1);
+	if (!b) {
+		RET(a < 0 ? 0x80000000u : 0x7fffffffu);
+		return;
+	}
+	int64_t q = ((int64_t)a << 16) / b;
+	RET((uint32_t)(int32_t)(q > INT32_MAX ? INT32_MAX : q < INT32_MIN ? INT32_MIN : q));
+}
+// Fix2X(Fixed) -> double in f1; X2Fix(double in f1) -> Fixed
+static void sh_Fix2X(PPC *c) { c->f[1].d = (int32_t)A(0) / 65536.0; }
+static void sh_X2Fix(PPC *c)
+{
+	double d = c->f[1].d * 65536.0;
+	RET((uint32_t)(int32_t)(d >= 2147483647.0 ? INT32_MAX : d <= -2147483648.0 ? INT32_MIN : lround(d)));
+}
+static void sh_FixRound(PPC *c) { RET((uint32_t)(int32_t)(int16_t)(((int32_t)A(0) + 0x8000) >> 16)); }
+
+// Microseconds(UnsignedWide *): since start-up
+static void sh_Microseconds(PPC *c)
+{
+	uint64_t us = (uint64_t)(CFAbsoluteTimeGetCurrent() * 1e6);
+	ST32(A(0), (uint32_t)(us >> 32));
+	ST32(A(0) + 4, (uint32_t)us);
+}
+
+// ---- Palette Manager: a direct-color screen has nothing to animate or reserve
+static void sh_GetPalette(PPC *c) { RET(0); }
+static void sh_palette_nop(PPC *c) { (void)c; }
+
+// ---- Font Manager
+
+static void sh_RealFont(PPC *c) { RET(1); }                  // outline fonts: every size exists
+static void sh_GetOutlinePreferred(PPC *c) { RET(1); }
+static void sh_LMGetFractEnable(PPC *c) { RET(0); }
+static void sh_SpaceExtra(PPC *c) { if (qd_port) qd_port->spExtra = (int)A(0); }
+static void sh_CharExtra(PPC *c) { (void)c; }                // not applied
+
+// a classic WidthTable for the current port's font: Fixed widths of the 256 characters, then the
+// font ID, size and style it is for
+static uint32_t width_table(Port *p)
+{
+	static uint32_t h;
+	if (!h)
+		h = NewHandleClearG(1072);
+	uint32_t t = HP(h);
+	for (int ch = 0; ch < 256; ch++) {
+		uint8_t b = (uint8_t)ch;
+		ST32(t + 4 * (uint32_t)ch, (uint32_t)(int32_t)lround(qd_text_width(p, &b, 1) * 65536.0));
+	}
+	ST32(t + 1028, (uint32_t)p->spExtra);   // sExtra
+	ST32(t + 1032, (uint32_t)p->txFace);    // style
+	ST16(t + 1036, (uint16_t)p->txFont);    // fID
+	ST16(t + 1038, (uint16_t)p->txSize);    // fSize
+	ST16(t + 1040, (uint16_t)p->txFace);    // face
+	ST32(t + 1044, 0x00010001);             // inNumer
+	ST32(t + 1048, 0x00010001);             // inDenom
+	ST16(t + 1052, (uint16_t)p->txFont);    // aFID
+	ST16(t + 1064, 0x0100);                 // vFactor, hFactor: 1.0 in 8.8
+	ST16(t + 1066, 0x0100);
+	ST16(t + 1068, (uint16_t)p->txSize);    // aSize
+	ST16(t + 1070, 1072);                   // tabSize
+	return h;
+}
+static void sh_LMGetWidthTabHandle(PPC *c) { RET(qd_port ? width_table(qd_port) : 0); }
+
+// FontMetrics(FMetricRec *): ascent, descent, leading, widMax (Fixed), wTabHandle
+static void sh_FontMetrics(PPC *c)
+{
+	Port *p = qd_port;
+	uint32_t m = A(0);
+	memset(G(m), 0, 20);
+	if (!p)
+		return;
+	int asc, desc, wid, lead;
+	qd_font_info(p, &asc, &desc, &wid, &lead);
+	ST32(m, (uint32_t)(asc << 16));
+	ST32(m + 4, (uint32_t)(desc << 16));
+	ST32(m + 8, (uint32_t)(lead << 16));
+	ST32(m + 12, (uint32_t)(wid << 16));
+	ST32(m + 16, width_table(p));
+}
+
+// ---- ports
+
+static void sh_GetPortClipRegion(PPC *c)
+{
+	Port *p = PORT(A(0));
+	Rgn *g = RGN(A(1));
+	if (p && g) {
+		rgn_copy(g, p->clip);
+		rgn_sync(A(1));
+	}
+	RET(A(1));
+}
+static void sh_GetPortPenSize(PPC *c)
+{
+	Port *p = PORT(A(0));
+	if (p)
+		STPT(A(1), p->pnSize);
+	RET(A(1));
+}
+
+// IconIDToRgn(rgn, const Rect *, alignment, iconID): the icon's rectangle
+static void sh_IconIDToRgn(PPC *c)
+{
+	Rgn *g = RGN(A(0));
+	if (!g) {
+		RET(-50);
+		return;
+	}
+	rgn_set_rect(g, RECT(A(1)));
+	rgn_sync(A(0));
+	RET(0);
+}
+
+static void sh_ObscureCursor(PPC *c) { (void)c; [NSCursor setHiddenUntilMouseMoves:YES]; }
+
+// GetScriptManagerVariable(selector): smEnabled 4 -> one script; smVersion 0; the rest Roman (0)
+static void sh_GetScriptManagerVariable(PPC *c)
+{
+	switch ((int16_t)A(0)) {
+	case 0: RET(0x0710); break;   // smVersion
+	case 4: RET(1); break;        // smEnabled
+	default: RET(0); break;
+	}
+}
+
+static void sh_GetPen(PPC *c) { if (qd_port) STPT(A(0), qd_port->pnLoc); }
+
+// QDTextBounds(byteCount, textAddr, Rect *): the text's extent from the pen's baseline origin
+static void sh_QDTextBounds(PPC *c)
+{
+	Port *p = qd_port;
+	QRect r = {0, 0, 0, 0};
+	if (p) {
+		int asc, desc, wid, lead;
+		qd_font_info(p, &asc, &desc, &wid, &lead);
+		int w = (int)lround(qd_text_width(p, G(A(1)), (int16_t)A(0)));
+		r = (QRect){(int16_t)-asc, 0, (int16_t)desc, (int16_t)w};
+	}
+	PUTRECT(A(2), r);
+}
+
 static const ShimDef carbonshims[] = {
+	S(ObscureCursor), S(GetScriptManagerVariable), S(GetPen), S(QDTextBounds),
+	S(FixMul), S(FixDiv), S(FixRound), S(Fix2X), S(X2Fix), S(Microseconds), S(GetPalette), {"NSetPalette", sh_palette_nop},
+	{"ActivatePalette", sh_palette_nop}, S(RealFont), S(GetOutlinePreferred), S(LMGetFractEnable), S(SpaceExtra),
+	S(CharExtra), S(LMGetWidthTabHandle), S(FontMetrics), S(GetPortClipRegion), S(GetPortPenSize), S(IconIDToRgn),
+	S(DeviceLoop),
+	S(InvokeWindowDefUPP), S(InvokeModalFilterUPP), S(InvokeQDBitsUPP), S(InvokeQDCommentUPP), S(InvokeQDRgnUPP),
+	S(InvokePMItemUPP), S(InvokeOSASendUPP),
 	S(DisposeCollection), S(GetTheme), S(GetCollectionItem), S(CFStringGetSystemEncoding), S(CFStringAppendCString),
 	S(CFBundleCopyResourcesDirectoryURL), S(GetThemeTextDimensions), S(IsPortColor), S(WakeUpProcess),
 	S(InstallEventLoopTimer), S(SetEventLoopTimerNextFireTime), S(RemoveEventLoopTimer), S(InsTime), S(PrimeTime),

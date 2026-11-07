@@ -22,6 +22,8 @@ typedef struct Win {
 	QRect userState, stdState;
 	uint32_t evtarget;
 	uint32_t wdef;           // custom window definition (CreateCustomWindow)
+	int skirt;               // rows of the custom frame drawn below the content (tabs), 0 if none
+	uint32_t *skirt_pix;     // those rows, content width, host-endian ARGB with alpha
 	RGB16 content_color;
 	int has_content_color;
 	int in_update;

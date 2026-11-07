@@ -721,6 +721,18 @@ static void port_bm(Port *p, BM *b)
 	b->bounds = p->bounds;
 }
 
+// a BitMap or PixMap as it reads now: a GWorld drawn by QuickDraw keeps its pixels in its 32-bit
+// buffer until the guest asks for the base address, so read that buffer instead of a stale copy
+static void read_bm_live(uint32_t a, BM *b)
+{
+	read_bm(a, b);
+	Port *p = port_of_bits(a);
+	if (p && p->shadow) {
+		port_shadow_sync(p, 0);
+		port_bm(p, b);
+	}
+}
+
 void qd_copybits(uint32_t src, uint32_t dst, QRect sr, QRect dr, int mode, Rgn *mask)
 {
 	BM s, d;
@@ -1356,6 +1368,7 @@ static void rgn_binop(PPC *c, int op)
 static void sh_SectRgn(PPC *c) { rgn_binop(c, RGN_SECT); }
 static void sh_UnionRgn(PPC *c) { rgn_binop(c, RGN_UNION); }
 static void sh_DiffRgn(PPC *c) { rgn_binop(c, RGN_DIFF); }
+static void sh_XorRgn(PPC *c) { rgn_binop(c, RGN_XOR); }
 static void sh_EmptyRgn(PPC *c) { Rgn *g = RGN(A(0)); RET(!g || rgn_empty(g)); }
 static void sh_PtInRgn(PPC *c) { Rgn *g = RGN(A(1)); QPoint p = PT(A(0)); RET(g && rgn_contains(g, p.h, p.v)); }
 static void sh_RectInRgn(PPC *c) { Rgn *g = RGN(A(1)); RET(g && rgn_rect_in(g, RECT(A(0)))); }
@@ -1373,7 +1386,7 @@ static void sh_BitMapToRegion(PPC *c)
 		return;
 	}
 	BM b;
-	read_bm(A(1), &b);
+	read_bm_live(A(1), &b);
 	RgnBuild rb;
 	rb_begin(&rb, g);
 	for (int y = b.bounds.top; y < b.bounds.bottom; y++) {
@@ -1675,6 +1688,16 @@ static void sh_NewGWorldFromPtr(PPC *c)
 
 static void sh_CopyBits(PPC *c)
 {
+	if (getenv("PPC_DBG_COPY")) {
+		Port *sp = port_of_bits(A(0)), *dp = port_of_bits(A(1));
+		QRect sr = RECT(A(2)), dr = RECT(A(3));
+		Rgn *m = A(5) ? RGN(A(5)) : NULL;
+		ppc_log("CopyBits %08x(port %08x b %d,%d,%d,%d) -> %08x(port %08x b %d,%d,%d,%d) src %d,%d,%d,%d dst %d,%d,%d,%d mode %d mask %d,%d,%d,%d",
+			A(0), sp ? sp->tok : 0, sp ? sp->bounds.top : 0, sp ? sp->bounds.left : 0, sp ? sp->bounds.bottom : 0, sp ? sp->bounds.right : 0,
+			A(1), dp ? dp->tok : 0, dp ? dp->bounds.top : 0, dp ? dp->bounds.left : 0, dp ? dp->bounds.bottom : 0, dp ? dp->bounds.right : 0,
+			sr.top, sr.left, sr.bottom, sr.right, dr.top, dr.left, dr.bottom, dr.right, (int16_t)A(4),
+			m ? m->bbox.top : 0, m ? m->bbox.left : 0, m ? m->bbox.bottom : 0, m ? m->bbox.right : 0);
+	}
 	qd_copybits(A(0), A(1), RECT(A(2)), RECT(A(3)), (int16_t)A(4), A(5) ? RGN(A(5)) : NULL);
 }
 static void sh_StdBits(PPC *c)
@@ -1687,7 +1710,7 @@ static void sh_CopyMask(PPC *c)
 {
 	// CopyMask(src, mask, dst, srcRect, maskRect, dstRect): where the mask is set
 	BM m;
-	read_bm(A(1), &m);
+	read_bm_live(A(1), &m);
 	QRect mr = RECT(A(4)), dr = RECT(A(5));
 	Rgn g = {{0, 0, 0, 0}, 0, 0, NULL};
 	RgnBuild rb;
@@ -1711,6 +1734,20 @@ static void sh_CopyMask(PPC *c)
 			rb_row(&rb, y, xs, n);
 	}
 	rb_end(&rb);
+	if (getenv("PPC_DBG_MASK")) {
+		BM sb;
+		read_bm_live(A(0), &sb);
+		int set = 0, nonwhite = 0;
+		QRect sr = RECT(A(3));
+		for (int y = mr.top; y < mr.bottom; y++)
+			for (int x = mr.left; x < mr.right; x++)
+				set += bm_bit(&m, x, y);
+		for (int y = sr.top; y < sr.bottom; y++)
+			for (int x = sr.left; x < sr.right; x++)
+				nonwhite += (bm_get(&sb, x, y) | 0xff) != 0xffffffffu;
+		ppc_log("CopyMask: mask depth %d base %08x %d set; src depth %d base %08x %d non-white; rgn %d rects",
+			m.depth, m.base, set, sb.depth, sb.base, nonwhite, g.n);
+	}
 	qd_copybits(A(0), A(2), RECT(A(3)), dr, 0, &g);
 	free(g.r);
 }
@@ -1918,7 +1955,7 @@ static const ShimDef qdshims[] = {
 	S(FramePoly), S(PaintPoly), S(FillPoly), S(FrameRgn), S(PaintRgn), S(EraseRgn), S(InvertRgn), S(FillRgn),
 	S(ScrollRect), S(SetRect), S(OffsetRect), S(InsetRect), S(SectRect), S(UnionRect), S(EqualRect), S(EmptyRect),
 	S(PtInRect), S(PinRect), S(EqualPt), S(MapRect), S(NewRgn), S(DisposeRgn), S(CopyRgn), S(SetEmptyRgn),
-	S(SetRectRgn), S(RectRgn), S(OffsetRgn), S(InsetRgn), S(SectRgn), S(UnionRgn), S(DiffRgn), S(EmptyRgn),
+	S(SetRectRgn), S(RectRgn), S(OffsetRgn), S(InsetRgn), S(SectRgn), S(UnionRgn), S(XorRgn), S(DiffRgn), S(EmptyRgn),
 	S(PtInRgn), S(RectInRgn), S(GetRegionBounds), S(BitMapToRegion), S(OpenRgn), S(CloseRgn), S(TextFont),
 	S(TextFace), S(TextMode), S(TextSize), S(DrawString), S(DrawText), S(StdText), S(StdTxMeas), S(StringWidth),
 	S(TextWidth), S(CharWidth), S(GetFontInfo), S(GetFNum), S(GetFontName), S(GetSysFont), S(GetAppFont),

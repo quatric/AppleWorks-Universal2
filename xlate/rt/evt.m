@@ -370,6 +370,76 @@ static void sh_GetMouse(PPC *c)
 	}
 	STPT(A(0), g);
 }
+// ---- TrackMouseLocation: the mouse while the button is down, in a port's local coordinates
+
+static QPoint local_mouse(Port *p)
+{
+	QPoint g = ev_mouse_global();
+	if (p && p->win) {
+		QPoint o = win_origin(p->win);
+		g.h = (int16_t)(g.h - o.h + p->portRect.left);
+		g.v = (int16_t)(g.v - o.v + p->portRect.top);
+	}
+	return g;
+}
+
+// one step: kMouseTrackingMouseReleased 2, Dragged 5, KeyModifiersChanged 6, TimedOut 8 (only with a timeout)
+static int track_step(Port *p, double timeout, QPoint *pt, uint16_t *mods)
+{
+	static QPoint last;
+	static uint16_t last_mods;
+	double end = CFAbsoluteTimeGetCurrent() + (timeout < 0 ? 1e9 : timeout);
+	for (;;) {
+		ev_pump(0.01);
+		QPoint m = local_mouse(p);
+		uint16_t md = ev_modifiers() & 0xff00;
+		*pt = m, *mods = md;
+		if (!ev_button_down()) {
+			last = m;
+			return 2;
+		}
+		if (m.h != last.h || m.v != last.v) {
+			last = m;
+			return 5;
+		}
+		if (md != last_mods) {
+			last_mods = md;
+			return 6;
+		}
+		if (CFAbsoluteTimeGetCurrent() >= end)
+			return 8;
+	}
+}
+
+// TrackMouseLocation(port, Point *, MouseTrackingResult *)
+static void sh_TrackMouseLocation(PPC *c)
+{
+	QPoint pt;
+	uint16_t md;
+	int r = track_step(A(0) ? PORT(A(0)) : qd_port, -1, &pt, &md);
+	if (A(1))
+		STPT(A(1), pt);
+	if (A(2))
+		ST16(A(2), (uint16_t)r);
+	RET(0);
+}
+// TrackMouseLocationWithOptions(port, options, double timeout, Point *, UInt32 *modifiers, MouseTrackingResult *):
+// the timeout comes in f1 and takes r5-r6
+static void sh_TrackMouseLocationWithOptions(PPC *c)
+{
+	QPoint pt;
+	uint16_t md;
+	double t = c->f[1].d;
+	int r = track_step(A(0) ? PORT(A(0)) : qd_port, t > 1e9 ? -1 : t, &pt, &md);
+	if (c->r[7])
+		STPT(c->r[7], pt);
+	if (c->r[8])
+		ST32(c->r[8], md);
+	if (c->r[9])
+		ST16(c->r[9], (uint16_t)r);
+	RET(0);
+}
+
 static void sh_GetGlobalMouse(PPC *c) { STPT(A(0), ev_mouse_global()); }
 static void sh_TickCount(PPC *c) { RET(ev_ticks()); }
 static void sh_GetDblTime(PPC *c) { RET((uint32_t)(NSEvent.doubleClickInterval * 60)); }
@@ -464,6 +534,6 @@ static const ShimDef evshims[] = {
 	S(TickCount), S(GetDblTime), S(GetCurrentKeyModifiers), S(Delay), S(FlushEvents), S(SysBeep), S(IsCmdChar),
 	S(InstallEventHandler), S(CallNextEventHandler), S(GetEventParameter), S(ConvertEventRefToEventRecord),
 	S(GetCurrentEventLoop), S(GetApplicationEventTarget), {"NewEventHandlerUPP", sh_upp_keep},
-	S(EventAvail), S(GetKeys),
+	S(EventAvail), S(GetKeys), S(TrackMouseLocation), S(TrackMouseLocationWithOptions),
 };
 REGISTER(evshims)

@@ -2,9 +2,10 @@
 //
 // PPC_SCRIPT="t:cmd;t:cmd;..." with t seconds after start and cmd one of
 //   click x y [mods]    a click at window-local x, y of the front window
+//   wclick Title x y [mods]  a click at content-local x, y of the window titled Title... (_ for spaces)
 //   down x y / move x y / up    a press, drag and release
 //   key c [mods]        a key (c a character, or a name: return tab esc left right up down del)
-//   shot file           the front window's pixels as a PNG
+//   shot file [Title]   the front window's (or the titled window's) pixels as a PNG
 //   menu id item        a menu choice
 //   quit
 // mods: any of cmd shift opt ctrl, joined with +
@@ -68,6 +69,23 @@ static uint16_t mods_of(const char *s)
 
 static Win *front(void) { return win_front(1); }
 
+// the window whose title starts with t (underscores for spaces), or the front window if t is empty
+static Win *titled(const char *t)
+{
+	if (!t || !*t)
+		return front();
+	char b[200];
+	snprintf(b, sizeof b, "%s", t);
+	for (char *q = b; *q; q++)
+		if (*q == '_')
+			*q = ' ';
+	size_t n = strlen(b);
+	for (Win *w = win_list(); w; w = w->next)
+		if (w->title[0] >= n && !memcmp(w->title + 1, b, n))
+			return w;
+	return NULL;
+}
+
 static QPoint global_of(int x, int y)
 {
 	Win *w = front();
@@ -86,9 +104,9 @@ static void mouse(int what, QPoint g, uint16_t mods)
 	ev_post(e);
 }
 
-static void shot(const char *file)
+static void shot(const char *file, const char *title)
 {
-	Win *w = front();
+	Win *w = titled(title);
 	if (!w || !w->port || !w->port->pix)
 		return;
 	Port *p = w->port;
@@ -97,6 +115,20 @@ static void shot(const char *file)
 	CGDataProviderRef dp = CGDataProviderCreateWithData(NULL, G(p->pix), (size_t)p->rowBytes * ht, NULL);
 	CGImageRef img = CGImageCreate(wd, ht, 8, 32, p->rowBytes, cs, kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Big, dp, NULL,
 		false, kCGRenderingIntentDefault);
+	if (w->skirt && w->skirt_pix) {
+		// with the custom frame drawn below the content
+		CGContextRef bc = CGBitmapContextCreate(NULL, wd, ht + w->skirt, 8, 0, cs, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+		CGContextRef sc = CGBitmapContextCreate(w->skirt_pix, wd, w->skirt, 8, (size_t)wd * 4, cs,
+			kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+		CGImageRef si = CGBitmapContextCreateImage(sc);
+		CGContextDrawImage(bc, CGRectMake(0, w->skirt, wd, ht), img);
+		CGContextDrawImage(bc, CGRectMake(0, 0, wd, w->skirt), si);
+		CGImageRelease(img);
+		CGImageRelease(si);
+		CGContextRelease(sc);
+		img = CGBitmapContextCreateImage(bc);
+		CGContextRelease(bc);
+	}
 	CFURLRef url = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8 *)file, (CFIndex)strlen(file), false);
 	CGImageDestinationRef d = CGImageDestinationCreateWithURL(url, CFSTR("public.png"), 1, NULL);
 	CGImageDestinationAddImage(d, img, NULL);
@@ -115,12 +147,26 @@ static void run(const char *cmd)
 	sscanf(cmd, "%31s %199s %31s %63s", op, a, b, m);
 	if (ppc_verbose)
 		ppc_log("script: %s", cmd);
-	if (!strcmp(op, "click") || !strcmp(op, "down")) {
+	if (!strcmp(op, "click") || !strcmp(op, "down") || !strcmp(op, "wclick")) {
 		fake = 1;
-		fake_pos = global_of(atoi(a), atoi(b));
+		if (op[0] == 'w') {
+			// wclick Title x y [mods]: content-local x, y of the window whose title starts with Title
+			// (underscores for spaces)
+			char t[200], m2[64] = "";
+			int x = 0, y = 0;
+			sscanf(cmd, "%*s %199s %d %d %63s", t, &x, &y, m2);
+			for (char *q = t; *q; q++)
+				if (*q == '_')
+					*q = ' ';
+			Win *w = titled(t);
+			QPoint o = w ? win_origin(w) : (QPoint){0, 0};
+			fake_pos = (QPoint){(int16_t)(o.v + y), (int16_t)(o.h + x)};
+			snprintf(m, sizeof m, "%s", m2);
+		} else
+			fake_pos = global_of(atoi(a), atoi(b));
 		fake_down = 1;
 		mouse(1, fake_pos, mods_of(m));
-		if (!strcmp(op, "click")) {
+		if (strcmp(op, "down")) {
 			// released at the next step of the pump
 			fake_down = 2;
 		}
@@ -169,7 +215,7 @@ static void run(const char *cmd)
 		e.data = (uint32_t)(uint16_t)atoi(a) << 16 | (uint16_t)atoi(b);
 		ev_post(e);
 	} else if (!strcmp(op, "shot"))
-		shot(a);
+		shot(a, b);
 	else if (!strcmp(op, "quit"))
 		exit(0);
 }

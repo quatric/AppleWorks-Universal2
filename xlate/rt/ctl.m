@@ -989,7 +989,9 @@ static void sh_NewControl(PPC *c)
 	if (A(2))
 		memcpy(title, G(A(2)), LD8(A(2)) + 1);
 	if (ppc_verbose >= 2)
-		ppc_log("NewControl proc %d value %d min %d max %d '%.*s'", (int16_t)A(7), (int16_t)A(4), (int16_t)A(5), (int16_t)A(6), title[0], title + 1);
+		ppc_log("NewControl proc %d value %d min %d max %d vis %d rect %d,%d,%d,%d '%.*s'", (int16_t)A(7), (int16_t)A(4), (int16_t)A(5),
+			(int16_t)A(6), A(3) & 0xff, (int16_t)LD16(A(1)), (int16_t)LD16(A(1) + 2), (int16_t)LD16(A(1) + 4), (int16_t)LD16(A(1) + 6),
+			title[0], title + 1);
 	Ctl *k = ctl_new(w, RECT(A(1)), title, A(3) & 0xff, (int16_t)A(4), (int16_t)A(5), (int16_t)A(6), (int16_t)A(7), A(8));
 	if (k->visible)
 		ctl_draw(k);
