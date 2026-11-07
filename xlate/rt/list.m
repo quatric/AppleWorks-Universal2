@@ -270,6 +270,24 @@ static void sh_LNew(PPC *c)
 	draw_all(l);
 	RET(l->h);
 }
+// CreateCustomList(rView, dataBounds, Point cellSize, const ListDefSpec *, window, drawIt, hasGrow,
+// scrollHoriz, scrollVert, ListHandle *): the standard list (custom definitions are not run); the
+// last two arguments are past the eight argument registers, at r1 + 56 and r1 + 60
+static void sh_CreateCustomList(PPC *c)
+{
+	uint32_t out = LD32(c->r[1] + 60), vs = LD32(c->r[1] + 56);
+	uint32_t a[9] = {A(0), A(1), A(2), 0, A(4), A(5), A(6), A(7), vs};
+	for (int i = 0; i < 8; i++)
+		c->r[3 + i] = a[i];
+	uint32_t save = LD32(c->r[1] + 56);
+	ST32(c->r[1] + 56, vs);      // LNew reads its ninth argument from the same place
+	sh_LNew(c);
+	ST32(c->r[1] + 56, save);
+	if (out)
+		ST32(out, c->r[3]);
+	RET(c->r[3] ? 0 : -108);
+}
+static void sh_GetListPort(PPC *c) { List *l = L(A(0)); RET(l && l->port ? l->port->tok : 0); }
 static void sh_LDispose(PPC *c)
 {
 	List *l = L(A(0));
@@ -636,6 +654,7 @@ static void sh_LClickWrapper(PPC *c)
 }
 
 static const ShimDef listshims[] = {
+	S(CreateCustomList), S(GetListPort),
 	S(LNew), S(LDispose), S(LAddRow), S(LAddColumn), S(LDelRow), S(LSetCell), S(LAddToCell), S(LGetCell),
 	S(LCellSize), S(LSize), S(LScroll), S(LSetDrawingMode), S(LUpdate), S(LDraw), S(LActivate), S(LSetSelect),
 	S(LGetSelect), S(LNextCell), S(LLastClick), {"LClick", sh_LClickWrapper}, S(GetListViewBounds),

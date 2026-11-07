@@ -86,6 +86,15 @@ static Port *dport(Dlg *d)
 	return w ? w->port : NULL;
 }
 
+// On Mac OS X a dialog's items are controls in its embedding hierarchy: static
+// text erases with the window's background and edit text is white, whatever
+// back color the application left in the port.
+static RGB16 dialog_bg(Dlg *d)
+{
+	Win *w = dwin(d);
+	return w && w->has_content_color ? w->content_color : (RGB16){0xffff, 0xffff, 0xffff};
+}
+
 static void set_text_style(Port *p)
 {
 	p->txFont = dialog_font;
@@ -98,6 +107,8 @@ static TEng *new_edit(Dlg *d, QRect r, const uint8_t *s, int n)
 	Port *p = dport(d);
 	set_text_style(p);
 	TEng *e = te_create(p, r, r, 0);
+	e->bg = (RGB16){0xffff, 0xffff, 0xffff};
+	e->has_bg = 1;
 	e->wrap = 1;
 	te_set_text(e, s, n);
 	te_set_select(e, 0, 0);
@@ -122,13 +133,9 @@ static void add_items(Dlg *d, const uint8_t *ditl, uint32_t len, int dh, int dv)
 		if (kind >= ctrlItem && kind <= ctrlItem + resCtrl) {
 			if (kind == ctrlItem + resCtrl) {
 				it.res_id = l >= 2 ? be16(data) : 0;
-				it.h = ctl_from_resource(it.res_id, w);
-				if (it.h) {
-					Ctl *k = CTL(it.h);
-					// the item's rectangle places the control
-					if (k && (k->r.left != it.r.left || k->r.top != it.r.top))
-						SHIM_CALL("MoveControl", it.h, (uint32_t)it.r.left, (uint32_t)it.r.top);
-				}
+				// the item's rectangle places the control
+				QPoint at = {.v = it.r.top, .h = it.r.left};
+				it.h = ctl_from_resource_at(it.res_id, w, &at);
 			} else {
 				uint8_t title[256];
 				int tl = expand(data, l, title + 1, 255);
@@ -156,6 +163,8 @@ static void add_items(Dlg *d, const uint8_t *ditl, uint32_t len, int dh, int dv)
 			d->cap = d->cap ? d->cap * 2 : 16;
 			d->items = realloc(d->items, d->cap * sizeof *d->items);
 		}
+		if (ppc_verbose >= 2)
+			ppc_log("  item %d: type %d rect %d,%d,%d,%d len %d", d->n + 1, it.type, it.r.top, it.r.left, it.r.bottom, it.r.right, l);
 		d->items[d->n++] = it;
 		o += 14 + l + (l & 1);
 	}
@@ -211,6 +220,8 @@ static void draw_item(Dlg *d, int i)
 		int tl = expand(G(HP(it->h)), n > 1024 ? 1024 : n, t, sizeof t);
 		set_text_style(p);
 		TEng *e = te_create(p, it->r, it->r, 0);
+		e->bg = dialog_bg(d);
+		e->has_bg = 1;
 		te_set_text(e, t, tl);
 		te_draw(e, NULL);
 		te_dispose(e);

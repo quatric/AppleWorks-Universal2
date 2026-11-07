@@ -591,7 +591,79 @@ static void sh_QDTextBounds(PPC *c)
 	PUTRECT(A(2), r);
 }
 
+// SubPt(Point src, Point *dst): dst -= src
+static void sh_SubPt(PPC *c)
+{
+	QPoint s = PT(A(0)), d = LDPT(A(1));
+	STPT(A(1), (QPoint){(int16_t)(d.v - s.v), (int16_t)(d.h - s.h)});
+}
+// AddPt(Point src, Point *dst): dst += src
+static void sh_AddPt(PPC *c)
+{
+	QPoint s = PT(A(0)), d = LDPT(A(1));
+	STPT(A(1), (QPoint){(int16_t)(d.v + s.v), (int16_t)(d.h + s.h)});
+}
+// Pt2Rect(Point a, Point b, Rect *): the smallest rectangle enclosing both
+static void sh_Pt2Rect(PPC *c)
+{
+	QPoint a = PT(A(0)), b = PT(A(1));
+	QRect r = {a.v < b.v ? a.v : b.v, a.h < b.h ? a.h : b.h, a.v > b.v ? a.v : b.v, a.h > b.h ? a.h : b.h};
+	PUTRECT(A(2), r);
+}
+static void sh_GetPortSpExtra(PPC *c) { Port *p = PORT(A(0)); RET(p ? (uint32_t)p->spExtra : 0); }
+static void sh_FixRatio(PPC *c)
+{
+	int32_t n = (int16_t)A(0), d = (int16_t)A(1);
+	RET(d ? (uint32_t)(int32_t)(((int64_t)n << 16) / d) : (n < 0 ? 0x80000000u : 0x7fffffffu));
+}
+static void sh_GetPortPenLocation(PPC *c) { Port *p = PORT(A(0)); if (p) STPT(A(1), p->pnLoc); RET(A(1)); }
+static void sh_TEAutoView(PPC *c) { (void)c; }
+static void sh_GetCTSeed(PPC *c) { static uint32_t seed = 1024; RET(++seed); }
+static void sh_QTNewAtomContainer(PPC *c) { if (A(0)) ST32(A(0), NewHandleClearG(12)); RET(0); }
+
+// TETextBox(text, length, const Rect *box, just): wrapped at word breaks in the port's font;
+// teFlushDefault/Left 0, teCenter 1, teFlushRight -1
+static void sh_TETextBox(PPC *c)
+{
+	Port *p = qd_port;
+	if (!p || !A(2))
+		return;
+	const uint8_t *t = G(A(0));
+	int n = (int)A(1);
+	QRect r = RECT(A(2));
+	int just = (int16_t)A(3), width = r.right - r.left;
+	SHIM_CALL("EraseRect", A(2));
+	int asc, desc, wid, lead;
+	qd_font_info(p, &asc, &desc, &wid, &lead);
+	QPoint saved = p->pnLoc;
+	int y = r.top + asc, i = 0;
+	while (i < n && y - asc < r.bottom) {
+		// the longest run of whole words that fits, up to a return
+		int end = i, last_break = -1;
+		while (end < n && t[end] != 13) {
+			if (t[end] == ' ')
+				last_break = end;
+			if (qd_text_width(p, t + i, end + 1 - i) > width && end > i)
+				break;
+			end++;
+		}
+		if (end < n && t[end] != 13 && last_break > i)
+			end = last_break;
+		int len = end - i;
+		int w = (int)lround(qd_text_width(p, t + i, len));
+		p->pnLoc.h = (int16_t)(just == 1 ? r.left + (width - w) / 2 : just == -1 ? r.right - w : r.left);
+		p->pnLoc.v = (int16_t)y;
+		qd_text_draw(p, t + i, len);
+		i = end;
+		if (i < n && (t[i] == 13 || t[i] == ' '))
+			i++;
+		y += asc + desc + lead;
+	}
+	p->pnLoc = saved;
+}
+
 static const ShimDef carbonshims[] = {
+	S(SubPt), S(AddPt), S(Pt2Rect), S(GetPortSpExtra), S(FixRatio), S(GetPortPenLocation), S(TEAutoView), S(GetCTSeed), S(QTNewAtomContainer), S(TETextBox),
 	S(ObscureCursor), S(GetScriptManagerVariable), S(GetPen), S(QDTextBounds),
 	S(FixMul), S(FixDiv), S(FixRound), S(Fix2X), S(X2Fix), S(Microseconds), S(GetPalette), {"NSetPalette", sh_palette_nop},
 	{"ActivatePalette", sh_palette_nop}, S(RealFont), S(GetOutlinePreferred), S(LMGetFractEnable), S(SpaceExtra),

@@ -1540,6 +1540,22 @@ static void sh_CreateDisclosureButtonControl(PPC *c)
 	ST32(A(4), k->h);
 	RET(0);
 }
+// CreateRoundButtonControl(window, bounds, ControlRoundButtonSize, ControlButtonContentInfo *, ControlRef *)
+static void sh_CreateRoundButtonControl(PPC *c)
+{
+	Ctl *k = ctl_new(WIN(A(0)), RECT(A(1)), NULL, 1, 0, 0, 1, 496, 0);
+	uint32_t ci = A(3);
+	if (ci) {
+		k->content = (int16_t)LD16(ci);
+		if (k->content >= 128)
+			k->content_h = LD32(ci + 2);
+		else
+			k->content_id = (int16_t)LD16(ci + 2);
+	}
+	ST32(A(4), k->h);
+	RET(0);
+}
+static void sh_GetControlPopupMenuHandle(PPC *c) { Ctl *k = C0; RET(k ? k->menu : 0); }
 static void sh_CreateIconControl(PPC *c)
 {
 	// (window, bounds, const ControlButtonContentInfo *, dontTrack, ControlRef *)
@@ -1605,7 +1621,9 @@ Ctl *ctl_find(Win *w, QPoint pt, int *part)
 int ctl_track(Ctl *k, QPoint pt, uint32_t action, uint16_t mods) { return track(k, pt, action, mods); }
 
 // GetNewControl(id, window): a 'CNTL' resource (rect, value, visible, fill, max, min, procID, refCon, title)
-uint32_t ctl_from_resource(int16_t id, Win *w)
+// a control from its 'CNTL' resource; with at, its top left placed there before
+// it first draws (a dialog item's rectangle places its control)
+uint32_t ctl_from_resource_at(int16_t id, Win *w, const QPoint *at)
 {
 	uint32_t len;
 	extern const uint8_t *res_bytes(uint32_t type, int16_t id, uint32_t *len);
@@ -1619,8 +1637,14 @@ uint32_t ctl_from_resource(int16_t id, Win *w)
 	uint8_t title[256] = {0};
 	if (len > 22)
 		memcpy(title, d + 22, d[22] + 1 <= (int)(len - 22) ? d[22] + 1 : len - 22);
+	if (at) {
+		int dh = at->h - r.left, dv = at->v - r.top;
+		r = (QRect){r.top + dv, r.left + dh, r.bottom + dv, r.right + dh};
+	}
 	return ctl_create(w, r, title, visible, value, min, max, proc, ref)->h;
 }
+
+uint32_t ctl_from_resource(int16_t id, Win *w) { return ctl_from_resource_at(id, w, NULL); }
 
 static void sh_GetNewControl(PPC *c) { RET(ctl_from_resource((int16_t)A(0), WIN(A(1)))); }
 
@@ -1694,6 +1718,7 @@ static void sh_SizeControl(PPC *c)
 }
 
 static const ShimDef ctlshims[] = {
+	S(CreateRoundButtonControl), S(GetControlPopupMenuHandle),
 	S(GetNewControl), S(FindControl), S(DrawControls), S(UpdateControls), S(MoveControl), S(SizeControl),
 	S(NewControl), S(CreateRootControl), S(GetRootControl), S(EmbedControl), S(GetIndexedSubControl),
 	S(GetControlOwner), S(DisposeControl), S(Draw1Control), S(DrawControlInCurrentPort), S(ShowControl),

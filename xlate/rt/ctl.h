@@ -53,5 +53,6 @@ Ctl *ctl_create(Win *w, QRect r, const uint8_t *title, int visible, int value, i
 Ctl *ctl_find(Win *w, QPoint pt, int *part);
 int ctl_track(Ctl *k, QPoint pt, uint32_t action, uint16_t mods);
 uint32_t ctl_from_resource(int16_t id, Win *w);
+uint32_t ctl_from_resource_at(int16_t id, Win *w, const QPoint *at);
 
 #endif

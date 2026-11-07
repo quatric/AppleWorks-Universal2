@@ -21,7 +21,7 @@ static void sh_Gestalt(PPC *c)
 	case 'sys3': v = 9; break;
 	case 'qd  ': v = 0x0230; break;
 	case 'qdrw': v = 0x3f; break;
-	case 'appr': v = 0x3; break;          // Appearance present
+	case 'appr': v = 0x1; break;          // Appearance present, not in compatibility mode
 	case 'apvr': v = 0x0114; break;
 	case 'wind': v = 0x1f; break;
 	case 'menu': v = 0x3; break;          // present, Aqua layout

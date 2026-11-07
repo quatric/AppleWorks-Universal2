@@ -7,6 +7,7 @@
 //   key c [mods]        a key (c a character, or a name: return tab esc left right up down del)
 //   shot file [Title]   the front window's (or the titled window's) pixels as a PNG
 //   menu id item        a menu choice
+//   windows             log every window
 //   quit
 // mods: any of cmd shift opt ctrl, joined with +
 #import <AppKit/AppKit.h>
@@ -214,6 +215,10 @@ static void run(const char *cmd)
 		e.part = 1;
 		e.data = (uint32_t)(uint16_t)atoi(a) << 16 | (uint16_t)atoi(b);
 		ev_post(e);
+	} else if (!strcmp(op, "windows")) {
+		for (Win *w = win_list(); w; w = w->next)
+			ppc_log("script: window %08x '%.*s' class %d visible %d frame %d,%d,%d,%d", w->tok, w->title[0], w->title + 1, w->wclass,
+				w->visible, w->frame.top, w->frame.left, w->frame.bottom, w->frame.right);
 	} else if (!strcmp(op, "shot"))
 		shot(a, b);
 	else if (!strcmp(op, "quit"))
