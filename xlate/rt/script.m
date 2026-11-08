@@ -245,11 +245,6 @@ static void run(const char *cmd)
 			ev_post(e);
 		}
 	} else if (!strcmp(op, "menu")) {
-		// a choice the menu does not offer now (changed since it was listed, or disabled) cannot be made
-		if (!menu_item_enabled(menu_get_handle((int16_t)atoi(a)), atoi(b))) {
-			ppc_log("script: menu %s %s is not available (menu %08x, %d items)", a, b, menu_get_handle((int16_t)atoi(a)), menu_count(menu_get_handle((int16_t)atoi(a))));
-			return;
-		}
 		Ev e = {0};
 		e.what = 1;
 		e.where = (QPoint){5, 5};
@@ -261,8 +256,9 @@ static void run(const char *cmd)
 		menu_dump();
 	} else if (!strcmp(op, "windows")) {
 		for (Win *w = win_list(); w; w = w->next)
-			ppc_log("script: window %08x '%.*s' class %d visible %d frame %d,%d,%d,%d", w->tok, w->title[0], w->title + 1, w->wclass,
-				w->visible, w->frame.top, w->frame.left, w->frame.bottom, w->frame.right);
+			ppc_log("script: window %08x '%.*s' class %d visible %d frame %d,%d,%d,%d cocoa %.0f,%.0f %.0fx%.0f", w->tok, w->title[0], w->title + 1, w->wclass,
+				w->visible, w->frame.top, w->frame.left, w->frame.bottom, w->frame.right, ((NSWindow *)w->ns).frame.origin.x,
+				((NSWindow *)w->ns).frame.origin.y, ((NSWindow *)w->ns).frame.size.width, ((NSWindow *)w->ns).frame.size.height);
 	} else if (!strcmp(op, "dump")) {
 		uint32_t at = (uint32_t)strtoul(a, NULL, 16);
 		int n = atoi(b);

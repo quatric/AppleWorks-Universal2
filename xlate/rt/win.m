@@ -519,6 +519,8 @@ static int wdef_part(Win *w, QPoint p)
 
 static Win *win_create(int wclass, uint32_t attrs, QRect bounds, const uint8_t *title, int visible, uint32_t refCon, uint32_t behind)
 {
+	if (ppc_verbose)
+		ppc_log("win_create class %d bounds %d,%d,%d,%d", wclass, bounds.top, bounds.left, bounds.bottom, bounds.right);
 	Win *w = calloc(1, sizeof *w);
 	w->wclass = wclass;
 	w->attrs = attrs;

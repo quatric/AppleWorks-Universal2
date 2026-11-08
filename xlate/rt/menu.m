@@ -764,6 +764,12 @@ static void sh_MenuSelect(PPC *c)
 	if (ev_last.part == 1 && !ev_last.win && ev_last.data) {
 		uint32_t d = ev_last.data;
 		ev_last.data = 0;
+		// the app has adjusted its menus by now (as for a real click): a choice they do not offer cannot be made
+		if (!menu_item_enabled(menu_get_handle((int16_t)(d >> 16)), (int)(d & 0xffff))) {
+			ppc_log("menu: %d %d is not available", (int16_t)(d >> 16), (int)(d & 0xffff));
+			RET(0);
+			return;
+		}
 		RET(d);
 		return;
 	}

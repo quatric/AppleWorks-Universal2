@@ -66,6 +66,17 @@ static void virtual_display(void)
 			steady = 0;
 		last = cur;
 		if (steady >= 20) {   // a full second
+			// a place of its own, right of the main display, so that no rearrangement puts it over the user's
+			CGRect main = CGDisplayBounds(CGMainDisplayID());
+			if ((int)cur.origin.x != (int)main.size.width || (int)cur.origin.y != 0) {
+				CGDisplayConfigRef cfg;
+				if (CGBeginDisplayConfiguration(&cfg) == kCGErrorSuccess) {
+					CGConfigureDisplayOrigin(cfg, id, (int32_t)main.size.width, 0);
+					CGCompleteDisplayConfiguration(cfg, kCGConfigureForSession);
+				}
+				steady = 0;
+				continue;
+			}
 			qd_use_display(id);
 			objc_setAssociatedObject(NSApp, "vdisplay", v, OBJC_ASSOCIATION_RETAIN);   // it lives as long as the app
 			return;
