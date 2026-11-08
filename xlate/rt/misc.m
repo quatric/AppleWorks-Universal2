@@ -438,19 +438,36 @@ static void sh_CharacterType(PPC *c)
 	uint8_t ch = LD8(A(0) + (int16_t)A(1));
 	RET(ch >= 0x80 ? 8 << 8 : isalnum(ch) ? 1 << 8 : 0);
 }
+static void sh_KeyScript(PPC *c) { (void)c; }   // one keyboard script
+// full screen mode (slide shows) is not offered: the caller falls back to a window
+static void sh_BeginFullScreen(PPC *c) { RET(-50); }
+static void sh_EndFullScreen(PPC *c) { RET(0); }
 // scripts: everything is Roman text
 static void sh_FindScriptRun(PPC *c) { if (A(2) > 0x10000) ST32(A(2), A(1)); RET(0); }
+static int wb_class(uint8_t ch) { return isalnum(ch) || ch >= 0x80 || ch == '_' ? 1 : isspace(ch) ? 2 : 0; }
 static void sh_FindWordBreaks(PPC *c)
 {
-	// (text, length, offset, leadingEdge, breaks, OffsetTable offsets, script)
+	// (text, length, offset, leadingEdge, breaks, OffsetTable offsets, script): the word the offset is in;
+	// letters and digits group, white space groups, any other character stands alone
 	const uint8_t *tx = G(A(0));
-	int n = (int16_t)A(1), o = (int16_t)A(2), a = o, b = o;
-	while (a > 0 && isalnum(tx[a - 1]))
-		a--;
-	while (b < n && isalnum(tx[b]))
-		b++;
-	if (a == b && b < n)
-		b++;
+	int n = (int16_t)A(1), o = (int16_t)A(2), lead = A(3) & 0xff;
+	int a, b;
+	int i = lead ? o : o - 1;
+	if (n <= 0 || i < 0 || i >= n) {
+		a = b = i < 0 ? 0 : n;
+		if (i >= n)
+			a = b = n;
+	} else {
+		int k = wb_class(tx[i]);
+		a = b = i;
+		if (k) {
+			while (a > 0 && wb_class(tx[a - 1]) == k)
+				a--;
+			while (b < n && wb_class(tx[b]) == k)
+				b++;
+		} else
+			b = i + 1;
+	}
 	if (A(5)) {
 		ST16(A(5), (uint16_t)a);
 		ST16(A(5) + 2, (uint16_t)b);
@@ -498,7 +515,8 @@ static void sh_GetProcessInformation(PPC *c)
 		memcpy(G(LD32(info + 56)), G(app_spec_g), 70);
 	RET(0);
 }
-static void sh_SetFrontProcess(PPC *c) { [NSApp activateIgnoringOtherApps:YES]; RET(0); }
+int qd_guest_screen_is_virtual(void);
+static void sh_SetFrontProcess(PPC *c) { if (!qd_guest_screen_is_virtual()) [NSApp activateIgnoringOtherApps:YES]; RET(0); }
 
 static void open_path_with(NSString *app, NSArray *docs)
 {
@@ -677,7 +695,7 @@ static const ShimDef miscshims[] = {
 	S(UpperString), S(UppercaseText), S(CopyCStringToPascal), S(CopyPascalStringToC), S(StyledLineBreak),
 	S(VisibleLength), S(Long2Fix), S(BitTst), S(Random), S(sin), S(cos), S(sqrt), S(floor), S(ceil), S(log10),
 	S(pow), S(nan), S(x80tod), S(num2dec), S(dec2num), S(dec2str), S(StringToFormatRec), S(StringToExtended),
-	S(GetDateTime), S(SecondsToDate), S(DateString), S(TimeString), S(LongDateString), S(LongTimeString), S(LongDateToSeconds), S(StringToDate), S(StringToTime), S(FindScriptRun), S(CharacterType), S(FindWordBreaks), S(GetCurrentProcess), S(GetNextProcess), S(GetProcessInformation),
+	S(GetDateTime), S(SecondsToDate), S(DateString), S(TimeString), S(LongDateString), S(LongTimeString), S(LongDateToSeconds), S(StringToDate), S(StringToTime), S(FindScriptRun), S(KeyScript), S(BeginFullScreen), S(EndFullScreen), S(CharacterType), S(FindWordBreaks), S(GetCurrentProcess), S(GetNextProcess), S(GetProcessInformation),
 	S(SetFrontProcess), S(LaunchApplication), S(LSInit), S(LSTerm), S(LSOpenFromRefSpec), S(ExitToShell),
 	S(__CFStringMakeConstantString), S(CFStringCreateWithCString), S(CFStringCreateWithPascalString),
 	S(CFStringCreateWithBytes), S(CFStringGetLength), S(CFStringGetCharacters), S(CFGetTypeID), S(CFStringGetTypeID),

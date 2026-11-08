@@ -286,6 +286,12 @@ static void sh_GetAvailableWindowPositioningBounds(PPC *c)
 {
 	NSScreen *s = NSScreen.mainScreen;
 	NSRect f = s.frame, v = s.visibleFrame;
+	if (qd_guest_screen_is_virtual()) {
+		QRect g = qd_screen_rect();
+		g.top = 22;   // the menu bar's height
+		PUTRECT(A(1), g);
+		return;
+	}
 	int top = (int)(NSMaxY(f) - NSMaxY(v)), left = (int)(v.origin.x - f.origin.x);
 	ST16(A(1), (uint16_t)top);
 	ST16(A(1) + 2, (uint16_t)left);

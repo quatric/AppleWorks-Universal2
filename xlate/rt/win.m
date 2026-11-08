@@ -214,7 +214,7 @@ static Win *ofw(NSWindow *nw)
 		return;
 	NSRect cr = [(NSWindow *)w->ns contentRectForFrameRect:((NSWindow *)w->ns).frame];
 	int wd = w->frame.right - w->frame.left, ht = w->frame.bottom - w->frame.top;
-	w->frame.left = (int16_t)cr.origin.x;
+	w->frame.left = (int16_t)qd_global_x(cr.origin.x);
 	w->frame.top = (int16_t)qd_global_y(cr.origin.y + cr.size.height);
 	w->frame.right = (int16_t)(w->frame.left + wd);
 	w->frame.bottom = (int16_t)(w->frame.top + ht);
@@ -321,7 +321,8 @@ Win *win_at(int h, int v)
 			continue;
 		NSRect f = ((NSWindow *)w->ns).frame;
 		double cy = qd_cocoa_y(v);
-		if (h >= f.origin.x && h < f.origin.x + f.size.width && cy > f.origin.y && cy <= f.origin.y + f.size.height)
+		double cx = qd_cocoa_x(h);
+		if (cx >= f.origin.x && cx < f.origin.x + f.size.width && cy > f.origin.y && cy <= f.origin.y + f.size.height)
 			return w;
 	}
 	return NULL;
@@ -354,7 +355,7 @@ static void list_front(Win *w)
 
 static NSRect cocoa_content(QRect r)
 {
-	return NSMakeRect(r.left, qd_cocoa_y(r.bottom), r.right - r.left, r.bottom - r.top);
+	return NSMakeRect(qd_cocoa_x(r.left), qd_cocoa_y(r.bottom), r.right - r.left, r.bottom - r.top);
 }
 // the Cocoa content rectangle of a window: its content plus any custom frame drawn below it
 static NSRect win_cocoa_rect(Win *w)
@@ -602,7 +603,8 @@ void win_show(Win *w)
 	Win *oldfront = win_front(1);
 	w->visible = 1;
 	NSWindow *nw = w->ns;
-	[NSApp activateIgnoringOtherApps:YES];
+	if (!qd_guest_screen_is_virtual())
+		[NSApp activateIgnoringOtherApps:YES];
 	if (w == win_front(0) || is_floating(w))
 		[nw makeKeyAndOrderFront:nil];
 	else
@@ -957,8 +959,8 @@ static void sh_CollapseWindow(PPC *c)
 static QRect structure_rect(Win *w)
 {
 	NSRect f = ((NSWindow *)w->ns).frame;
-	return (QRect){(int16_t)qd_global_y(f.origin.y + f.size.height), (int16_t)f.origin.x,
-		(int16_t)qd_global_y(f.origin.y), (int16_t)(f.origin.x + f.size.width)};
+	return (QRect){(int16_t)qd_global_y(f.origin.y + f.size.height), (int16_t)qd_global_x(f.origin.x),
+		(int16_t)qd_global_y(f.origin.y), (int16_t)qd_global_x(f.origin.x + f.size.width)};
 }
 
 static QRect region_rect(Win *w, int code)

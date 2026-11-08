@@ -260,7 +260,7 @@ static void sh_TrackDrag(PPC *c)
 	NSWindow *fw = nil;
 	CGImageRef img = snapshot(src, box);
 	if (img) {
-		NSRect fr = NSMakeRect(box.left, qd_cocoa_y(box.bottom), box.right - box.left, box.bottom - box.top);
+		NSRect fr = NSMakeRect(qd_cocoa_x(box.left), qd_cocoa_y(box.bottom), box.right - box.left, box.bottom - box.top);
 		fw = [[NSWindow alloc] initWithContentRect:fr styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
 		fw.opaque = NO;
 		fw.backgroundColor = NSColor.clearColor;
@@ -292,7 +292,7 @@ static void sh_TrackDrag(PPC *c)
 		QPoint m = ev_mouse_global();
 		d->mouse = m;
 		if (fw)
-			[fw setFrameOrigin:NSMakePoint(box.left + m.h - start.h, qd_cocoa_y(box.bottom + m.v - start.v))];
+			[fw setFrameOrigin:NSMakePoint(qd_cocoa_x(box.left + m.h - start.h), qd_cocoa_y(box.bottom + m.v - start.v))];
 		Win *w = win_at(m.h, m.v);
 		if (w != over) {
 			if (over)

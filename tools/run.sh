@@ -3,7 +3,7 @@
 # in build/run.log, then prints the unimplemented imports it reached and the
 # end of the log.
 cd "$(dirname "$0")/.."
-PPC_STAY_ACTIVE=${PPC_STAY_ACTIVE:-1} PPC_VERBOSE=${PPC_VERBOSE:-1} "build/AppleWorks 6.app/Contents/MacOS/AppleWorks" "$@" > build/run.log 2>&1 &
+PPC_VDISPLAY=${PPC_VDISPLAY-1} PPC_STAY_ACTIVE=${PPC_STAY_ACTIVE:-1} PPC_VERBOSE=${PPC_VERBOSE:-1} "build/AppleWorks 6.app/Contents/MacOS/AppleWorks" "$@" > build/run.log 2>&1 &
 P=$!
 T=0
 while [ $T -lt ${SECS:-20} ] && kill -0 $P 2>/dev/null; do sleep 1; T=$((T + 1)); done

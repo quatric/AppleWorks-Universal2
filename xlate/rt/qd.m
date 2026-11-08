@@ -17,13 +17,27 @@ enum { TAG_PORT = 'port' };
 
 // ---- screen ---------------------------------------------------------------------
 
-static double main_h(void) { return NSScreen.screens.count ? NSScreen.screens[0].frame.size.height : 900; }
-int qd_global_y(double y) { return (int)lround(main_h() - y); }
-double qd_cocoa_y(int v) { return main_h() - v; }
+// The guest's screen: the main display, or the virtual display of a test run (PPC_VDISPLAY), which keeps the
+// windows off the user's own screen. Guest global coordinates have their origin at its top left.
+static CGDirectDisplayID guest_display;
+void qd_use_display(CGDirectDisplayID d) { guest_display = d; }
+static NSRect guest_frame(void)
+{
+	if (guest_display) {   // NSScreen does not list a virtual display: place it by its CoreGraphics bounds
+		CGRect b = CGDisplayBounds(guest_display), m = CGDisplayBounds(CGMainDisplayID());
+		return NSMakeRect(b.origin.x, m.size.height - b.origin.y - b.size.height, b.size.width, b.size.height);
+	}
+	return NSScreen.screens.count ? NSScreen.screens[0].frame : NSMakeRect(0, 0, 1440, 900);
+}
+int qd_global_y(double y) { NSRect f = guest_frame(); return (int)lround(f.origin.y + f.size.height - y); }
+double qd_cocoa_y(int v) { NSRect f = guest_frame(); return f.origin.y + f.size.height - v; }
+int qd_global_x(double x) { return (int)floor(x - guest_frame().origin.x); }
+double qd_cocoa_x(int h) { return guest_frame().origin.x + h; }
+int qd_guest_screen_is_virtual(void) { return guest_display != 0; }
 
 QRect qd_screen_rect(void)
 {
-	NSRect f = NSScreen.screens.count ? NSScreen.screens[0].frame : NSMakeRect(0, 0, 1440, 900);
+	NSRect f = guest_frame();
 	return (QRect){0, 0, (int16_t)f.size.height, (int16_t)f.size.width};
 }
 

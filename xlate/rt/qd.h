@@ -104,3 +104,7 @@ double qd_cocoa_y(int v);
 void qd_hidecursor_reset(void);
 
 #endif
+
+int qd_global_x(double x);
+double qd_cocoa_x(int h);
+int qd_guest_screen_is_virtual(void);

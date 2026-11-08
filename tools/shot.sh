@@ -3,7 +3,7 @@
 # into build/shot.png (needs build/winbig, compiled from tools/winbig.swift).
 cd "$(dirname "$0")/.."
 [ build/winbig -nt tools/winbig.swift ] || swiftc -O -o build/winbig tools/winbig.swift
-PPC_STAY_ACTIVE=${PPC_STAY_ACTIVE:-1} PPC_VERBOSE=${PPC_VERBOSE:-1} "build/AppleWorks 6.app/Contents/MacOS/AppleWorks" "$@" > build/run.log 2>&1 &
+PPC_VDISPLAY=${PPC_VDISPLAY-1} PPC_STAY_ACTIVE=${PPC_STAY_ACTIVE:-1} PPC_VERBOSE=${PPC_VERBOSE:-1} "build/AppleWorks 6.app/Contents/MacOS/AppleWorks" "$@" > build/run.log 2>&1 &
 P=$!
 sleep ${SECS:-12}
 W=$(build/winbig $P)

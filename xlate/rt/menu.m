@@ -412,7 +412,7 @@ int menu_popup(uint32_t h, QPoint g, int cur, int width, CTFontRef font)
 		pos.state = NSControlStateValueOn;
 	popup_choice = 0;
 	in_popup = 1;
-	NSPoint at = NSMakePoint(g.h, qd_cocoa_y(g.v));
+	NSPoint at = NSMakePoint(qd_cocoa_x(g.h), qd_cocoa_y(g.v));
 	if (!pos)
 		at.y = qd_cocoa_y(g.v);
 	[nm popUpMenuPositioningItem:pos atLocation:at inView:nil];

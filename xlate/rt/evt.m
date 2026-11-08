@@ -66,7 +66,7 @@ QPoint ev_mouse_global(void)
 	if (script_mouse(&sp))
 		return sp;
 	NSPoint p = NSEvent.mouseLocation;
-	return (QPoint){(int16_t)qd_global_y(p.y), (int16_t)floor(p.x)};
+	return (QPoint){(int16_t)qd_global_y(p.y), (int16_t)qd_global_x(p.x)};
 }
 
 void ev_post(Ev e)
