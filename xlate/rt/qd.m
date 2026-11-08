@@ -903,6 +903,7 @@ static void sh_GetPortBitMapForCopyBits(PPC *c) { Port *p = PORT(A(0)); RET(p ? 
 static void sh_GetPortTextFont(PPC *c) { Port *p = PORT(A(0)); RET(p ? p->txFont : 0); }
 static void sh_GetPortTextSize(PPC *c) { Port *p = PORT(A(0)); RET(p ? p->txSize : 0); }
 static void sh_GetPortTextFace(PPC *c) { Port *p = PORT(A(0)); RET(p ? p->txFace : 0); }
+static void sh_GetPortPenMode(PPC *c) { Port *p = PORT(A(0)); RET(p ? p->pnMode : 8); }
 static void sh_GetPortTextMode(PPC *c) { Port *p = PORT(A(0)); RET(p ? p->txMode : 0); }
 static void sh_GetPortGrafProcs(PPC *c) { Port *p = PORT(A(0)); RET(p ? p->grafProcs : 0); }
 static void sh_SetPortGrafProcs(PPC *c) { Port *p = PORT(A(0)); if (p) p->grafProcs = A(1); }
@@ -1988,7 +1989,7 @@ void qd_init(void)
 static const ShimDef qdshims[] = {
 	S(GetPort), S(GetQDGlobalsThePort), S(SetPort), S(GetPortBounds), S(SetPortBounds), S(GetPortVisibleRegion), S(SetPortVisibleRegion),
 	S(GetPortPixMap), S(GetPortBitMapForCopyBits), S(GetPortTextFont), S(GetPortTextSize), S(GetPortTextFace),
-	S(GetPortTextMode), S(GetPortGrafProcs), S(SetPortGrafProcs), S(IsPortRegionBeingDefined), S(QDFlushPortBuffer),
+	S(GetPortTextMode), S(GetPortPenMode), S(GetPortGrafProcs), S(SetPortGrafProcs), S(IsPortRegionBeingDefined), S(QDFlushPortBuffer),
 	S(QDError), S(QDDone), S(LockPortBits), {"UnlockPortBits", sh_LockPortBits}, S(SetOrigin), S(ClipRect), S(SetClip),
 	S(GetClip), S(GlobalToLocal), S(LocalToGlobal), S(MoveTo), S(Move), S(LineTo), S(Line), S(PenSize), S(PenMode),
 	S(PenPat), S(BackPat), S(PenNormal), S(HidePen), S(ShowPen), S(GetPenState), S(SetPenState), S(RGBForeColor),
