@@ -15,6 +15,7 @@
 // mods: any of cmd shift opt ctrl, joined with +
 #import <AppKit/AppKit.h>
 #import <ImageIO/ImageIO.h>
+#include "menu.h"
 #include "win.h"
 
 typedef struct { double t; char cmd[256]; } Step;
@@ -244,6 +245,11 @@ static void run(const char *cmd)
 			ev_post(e);
 		}
 	} else if (!strcmp(op, "menu")) {
+		// a choice the menu does not offer now (changed since it was listed, or disabled) cannot be made
+		if (!menu_item_enabled(menu_get_handle((int16_t)atoi(a)), atoi(b))) {
+			ppc_log("script: menu %s %s is not available (menu %08x, %d items)", a, b, menu_get_handle((int16_t)atoi(a)), menu_count(menu_get_handle((int16_t)atoi(a))));
+			return;
+		}
 		Ev e = {0};
 		e.what = 1;
 		e.where = (QPoint){5, 5};

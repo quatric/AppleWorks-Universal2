@@ -6,6 +6,7 @@
 uint32_t menu_get_handle(int16_t id);     // an inserted menu (menu bar or hierarchical)
 uint32_t menu_load(int16_t id);           // from a MENU resource
 int menu_count(uint32_t menu);
+int menu_item_enabled(uint32_t menu, int item);   // 1-based; 0 if there is no such item or it is disabled
 void menu_item_text(uint32_t menu, int item, uint8_t *pstr);
 int16_t menu_id(uint32_t menu);
 void menu_flush(void);                    // rebuild the menu bar if it changed

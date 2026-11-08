@@ -20,13 +20,17 @@ enum { TAG_PORT = 'port' };
 // The guest's screen: the main display, or the virtual display of a test run (PPC_VDISPLAY), which keeps the
 // windows off the user's own screen. Guest global coordinates have their origin at its top left.
 static CGDirectDisplayID guest_display;
-void qd_use_display(CGDirectDisplayID d) { guest_display = d; }
+static NSRect guest_virtual_frame;   // fixed when the display is chosen, so a later mode change cannot move the windows
+void qd_use_display(CGDirectDisplayID d)
+{
+	CGRect b = CGDisplayBounds(d), m = CGDisplayBounds(CGMainDisplayID());
+	guest_virtual_frame = NSMakeRect(b.origin.x, m.size.height - b.origin.y - b.size.height, b.size.width, b.size.height);
+	guest_display = d;
+}
 static NSRect guest_frame(void)
 {
-	if (guest_display) {   // NSScreen does not list a virtual display: place it by its CoreGraphics bounds
-		CGRect b = CGDisplayBounds(guest_display), m = CGDisplayBounds(CGMainDisplayID());
-		return NSMakeRect(b.origin.x, m.size.height - b.origin.y - b.size.height, b.size.width, b.size.height);
-	}
+	if (guest_display)   // NSScreen does not list a virtual display
+		return guest_virtual_frame;
 	return NSScreen.screens.count ? NSScreen.screens[0].frame : NSMakeRect(0, 0, 1440, 900);
 }
 int qd_global_y(double y) { NSRect f = guest_frame(); return (int)lround(f.origin.y + f.size.height - y); }

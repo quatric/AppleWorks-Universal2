@@ -847,6 +847,12 @@ static const ShimDef menushims[] = {
 };
 REGISTER(menushims)
 
+int menu_item_enabled(uint32_t menu, int item)
+{
+	Menu *m = M(menu);
+	return m && item >= 1 && item <= m->n && m->items[item - 1].enabled;
+}
+
 // debugging: the menu bar's menus and items, to the log
 void menu_dump(void)
 {

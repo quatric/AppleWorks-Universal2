@@ -55,8 +55,8 @@ static void virtual_display(void)
 		return;
 	}
 	CGDirectDisplayID id = v.displayID;
-	for (int i = 0; i < 100; i++) {   // it is active shortly
-		if (CGDisplayIsActive(id) && CGDisplayBounds(id).size.width > 0) {
+	for (int i = 0; i < 200; i++) {   // it is active, in its mode, shortly
+		if (CGDisplayIsActive(id) && CGDisplayBounds(id).size.width == 1600 && CGDisplayBounds(id).size.height == 1000) {
 			qd_use_display(id);
 			objc_setAssociatedObject(NSApp, "vdisplay", v, OBJC_ASSOCIATION_RETAIN);   // it lives as long as the app
 			return;
