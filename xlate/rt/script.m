@@ -23,7 +23,7 @@ static Step *steps;
 static int nsteps, next_step, loaded;
 static double t_start;
 static int fake, fake_down;
-static QPoint fake_pos;
+static QPoint fake_pos = {300, 300};   // a scripted run never reads the real mouse
 
 static void load(void)
 {
@@ -47,7 +47,7 @@ static void load(void)
 
 int script_mouse(QPoint *p)
 {
-	if (!fake)
+	if (!fake && !getenv("PPC_SCRIPT"))
 		return 0;
 	*p = fake_pos;
 	return 1;
@@ -274,6 +274,18 @@ static void run(const char *cmd)
 		exit(0);
 }
 
+// a click on a window by title waits (up to a minute) until that window is there and showing
+static int step_ready(const char *cmd, double late)
+{
+	char op[32] = {0}, t[200] = {0};
+	if (sscanf(cmd, "%31s %199s", op, t) < 2 || late > 60)
+		return 1;
+	if (strcmp(op, "wclick") && !((!strcmp(op, "down") || !strcmp(op, "move")) && !(t[0] == '-' || (t[0] >= '0' && t[0] <= '9'))))
+		return 1;
+	Win *w = titled(t);
+	return w && w->visible;
+}
+
 void script_tick(void)
 {
 	if (!loaded)
@@ -287,6 +299,9 @@ void script_tick(void)
 	if (next_step >= nsteps)
 		return;
 	double now = CFAbsoluteTimeGetCurrent() - t_start;
-	while (next_step < nsteps && steps[next_step].t <= now)
+	while (next_step < nsteps && steps[next_step].t <= now) {
+		if (!step_ready(steps[next_step].cmd, now - steps[next_step].t))
+			break;
 		run(steps[next_step++].cmd);
+	}
 }

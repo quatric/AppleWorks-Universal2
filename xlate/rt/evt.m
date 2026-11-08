@@ -168,8 +168,10 @@ static void watch_app(void)
 
 // ---- Cocoa events --------------------------------------------------------------------------
 
+void win_follow_display(void);
 int ev_pump(double wait)
 {
+	win_follow_display();
 	watch_app();
 	menu_flush();
 	static int scripted = -1;

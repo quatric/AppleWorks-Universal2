@@ -217,6 +217,8 @@ static Win *ofw(NSWindow *nw)
 	if (!w)
 		return;
 	NSRect cr = [(NSWindow *)w->ns contentRectForFrameRect:((NSWindow *)w->ns).frame];
+	if (ppc_verbose)
+		ppc_log("windowDidMove %08x '%.*s': cocoa %.0f,%.0f", w->tok, w->title[0], w->title + 1, cr.origin.x, cr.origin.y);
 	int wd = w->frame.right - w->frame.left, ht = w->frame.bottom - w->frame.top;
 	w->frame.left = (int16_t)qd_global_x(cr.origin.x);
 	w->frame.top = (int16_t)qd_global_y(cr.origin.y + cr.size.height);
@@ -367,6 +369,23 @@ static NSRect win_cocoa_rect(Win *w)
 	QRect r = w->frame;
 	r.bottom = (int16_t)(r.bottom + w->skirt);
 	return cocoa_content(r);
+}
+
+// A test run's windows stay at the place the guest gave them on the virtual display, even when it changes place
+void win_follow_display(void)
+{
+	if (!qd_guest_screen_is_virtual())
+		return;
+	for (Win *w = windows; w; w = w->next) {
+		NSWindow *nw = w->ns;
+		NSRect want = [nw frameRectForContentRect:win_cocoa_rect(w)], have = nw.frame;
+		if (fabs(want.origin.x - have.origin.x) > 1 || fabs(want.origin.y - have.origin.y) > 1) {
+			if (ppc_verbose)
+				ppc_log("window %08x '%.*s' is off its place (%.0f,%.0f, want %.0f,%.0f): moved back", w->tok, w->title[0], w->title + 1,
+					have.origin.x, have.origin.y, want.origin.x, want.origin.y);
+			[nw setFrameOrigin:want.origin];
+		}
+	}
 }
 
 static void ns_title(Win *w)
@@ -520,7 +539,7 @@ static int wdef_part(Win *w, QPoint p)
 static Win *win_create(int wclass, uint32_t attrs, QRect bounds, const uint8_t *title, int visible, uint32_t refCon, uint32_t behind)
 {
 	if (ppc_verbose)
-		ppc_log("win_create class %d bounds %d,%d,%d,%d", wclass, bounds.top, bounds.left, bounds.bottom, bounds.right);
+		ppc_log("win_create class %d bounds %d,%d,%d,%d (guest screen at x %.0f)", wclass, bounds.top, bounds.left, bounds.bottom, bounds.right, qd_cocoa_x(0));
 	Win *w = calloc(1, sizeof *w);
 	w->wclass = wclass;
 	w->attrs = attrs;
@@ -568,6 +587,11 @@ static Win *win_create(int wclass, uint32_t attrs, QRect bounds, const uint8_t *
 		nw = [[XLPanel alloc] initWithContentRect:cr styleMask:style backing:NSBackingStoreBuffered defer:NO];
 	else
 		nw = [[XLWindow alloc] initWithContentRect:cr styleMask:style backing:NSBackingStoreBuffered defer:NO];
+	if (qd_guest_screen_is_virtual())   // creation pulls a window onto a screen AppKit knows: put it where the guest asked
+		[nw setFrameOrigin:[nw frameRectForContentRect:cr].origin];
+	if (ppc_verbose)
+		ppc_log("win_create: asked for cocoa content %.0f,%.0f %.0fx%.0f, got window frame %.0f,%.0f %.0fx%.0f", cr.origin.x, cr.origin.y, cr.size.width, cr.size.height,
+			nw.frame.origin.x, nw.frame.origin.y, nw.frame.size.width, nw.frame.size.height);
 	nw.releasedWhenClosed = NO;
 	if (!delegate)
 		delegate = [XLWinDelegate new];
@@ -617,10 +641,15 @@ void win_show(Win *w)
 	NSWindow *nw = w->ns;
 	if (!qd_guest_screen_is_virtual())
 		[NSApp activateIgnoringOtherApps:YES];
+	NSRect before = nw.frame;
 	if (w == win_front(0) || is_floating(w))
 		[nw makeKeyAndOrderFront:nil];
 	else
 		[nw orderFront:nil];
+	if (ppc_verbose && !NSEqualRects(before, nw.frame))
+		ppc_log("win_show %08x '%.*s': frame %.0f,%.0f %.0fx%.0f -> %.0f,%.0f %.0fx%.0f", w->tok, w->title[0], w->title + 1,
+			before.origin.x, before.origin.y, before.size.width, before.size.height, nw.frame.origin.x, nw.frame.origin.y,
+			nw.frame.size.width, nw.frame.size.height);
 	win_invalidate(w, w->port->portRect);
 	wdef_render(w);
 	if (win_front(1) == w && !is_floating(w) && oldfront != w) {

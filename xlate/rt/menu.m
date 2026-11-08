@@ -40,6 +40,7 @@ static int dirty = 1;
 static int16_t help_id = -16490;
 static Menu *help_menu;
 
+void menu_dump(void);
 static Menu *M(uint32_t h) { return h ? hm_get(&menus, h) : NULL; }
 
 // the guest's MenuInfo: menuID, width, height, proc, enableFlags, title
@@ -767,6 +768,8 @@ static void sh_MenuSelect(PPC *c)
 		// the app has adjusted its menus by now (as for a real click): a choice they do not offer cannot be made
 		if (!menu_item_enabled(menu_get_handle((int16_t)(d >> 16)), (int)(d & 0xffff))) {
 			ppc_log("menu: %d %d is not available", (int16_t)(d >> 16), (int)(d & 0xffff));
+			if (getenv("PPC_DBG_MENU"))
+				menu_dump();
 			RET(0);
 			return;
 		}
@@ -866,7 +869,7 @@ void menu_dump(void)
 		Menu *m = bar[i];
 		ppc_log("menu %d '%.*s'", m->id, m->title[0], m->title + 1);
 		for (int k = 0; k < m->n; k++)
-			ppc_log("  item %d '%.*s' %s cmd '%c'", k + 1, m->items[k].text[0], m->items[k].text + 1,
-				m->items[k].enabled ? "on" : "off", m->items[k].cmd >= 32 ? m->items[k].cmd : ' ');
+			ppc_log("  item %d '%.*s' %s cmd '%c'%s", k + 1, m->items[k].text[0], m->items[k].text + 1,
+				m->items[k].enabled ? "on" : "off", m->items[k].cmd >= 32 ? m->items[k].cmd : ' ', m->items[k].sub ? " submenu" : "");
 	}
 }
