@@ -197,6 +197,52 @@ void mem_init(void)
 // ---- Memory Manager shims ------------------------------------------------------
 
 static void sh_NewPtr(PPC *c) { uint32_t p = gmalloc(A(0)); mem_err = p ? 0 : -108; RET(p); }
+// Munger(h, offset, ptr1, len1, ptr2, len2): find ptr1 (len1 bytes) in the handle from offset, or
+// with no ptr1 take the len1 bytes at offset (len1 < 0: to the end); replace them with ptr2 when
+// given. The result is the offset past the replacement, the offset found when only searching, or a
+// negative number when ptr1 is not there.
+static void sh_Munger(PPC *c)
+{
+	uint32_t h = A(0), p1 = A(2), p2 = A(4);
+	int32_t off = (int32_t)A(1), l1 = (int32_t)A(3), l2 = (int32_t)A(5);
+	int32_t size = (int32_t)HSize(h);
+	if (off < 0 || off > size) {
+		RET((uint32_t)-1);
+		return;
+	}
+	int32_t at = off, n;
+	if (p1 && l1 > 0) {
+		at = -1;
+		for (int32_t i = off; i + l1 <= size; i++)
+			if (!memcmp(G(HP(h) + (uint32_t)i), G(p1), (size_t)l1)) {
+				at = i;
+				break;
+			}
+		if (at < 0) {
+			RET((uint32_t)-1);
+			return;
+		}
+		n = l1;
+	} else
+		n = l1 < 0 || at + l1 > size ? size - at : (p1 ? 0 : l1);
+	if (!p2) {
+		RET((uint32_t)at);
+		return;
+	}
+	if (l2 < 0)
+		l2 = 0;
+	int32_t ns = size - n + l2;
+	if (l2 > n && HSetSize(h, (uint32_t)ns)) {
+		RET((uint32_t)-1);
+		return;
+	}
+	memmove(G(HP(h) + (uint32_t)(at + l2)), G(HP(h) + (uint32_t)(at + n)), (size_t)(size - at - n));
+	if (l2)
+		memmove(G(HP(h) + (uint32_t)at), G(p2), (size_t)l2);
+	if (l2 < n)
+		HSetSize(h, (uint32_t)ns);
+	RET((uint32_t)(at + l2));
+}
 static void sh_NewPtrClear(PPC *c) { uint32_t p = gcalloc(A(0)); mem_err = p ? 0 : -108; RET(p); }
 static void sh_DisposePtr(PPC *c) { gfree(A(0)); mem_err = 0; }
 static void sh_NewHandle(PPC *c) { mem_err = 0; RET(NewHandleG(A(0))); }
@@ -285,6 +331,19 @@ static void sh_PtrToHand(PPC *c)
 	mem_err = 0;
 	RET(0);
 }
+// PtrToXHand(srcPtr, dstHndl, size): the handle becomes a copy of the bytes
+static void sh_PtrToXHand(PPC *c)
+{
+	uint32_t p = A(0), h = A(1), n = A(2);
+	if (!h || HSetSize(h, n)) {
+		mem_err = -108;
+		RET((uint32_t)-108);
+		return;
+	}
+	memmove(G(HP(h)), G(p), n);
+	mem_err = 0;
+	RET(0);
+}
 static void sh_PtrAndHand(PPC *c)
 {
 	uint32_t p = A(0), h = A(1), n = A(2);
@@ -302,10 +361,10 @@ static void sh_GetPtrSize(PPC *c) { mem_err = 0; RET(gsize(A(0))); }
 static void sh_mem_ok(PPC *c) { (void)c; mem_err = 0; }   // MoveHHi, HPurge: nothing moves or purges here
 
 static const ShimDef memshims[] = {
-	S(NewPtr), S(NewPtrClear), S(DisposePtr), S(NewHandle), S(NewHandleClear), S(TempNewHandle), S(DisposeHandle),
+	S(NewPtr), S(NewPtrClear), S(Munger), S(DisposePtr), S(NewHandle), S(NewHandleClear), S(TempNewHandle), S(DisposeHandle),
 	S(GetHandleSize), S(SetHandleSize), S(HLock), S(HUnlock), S(HNoPurge), S(HGetState), S(HSetState),
 	S(EmptyHandle), S(ReallocateHandle), S(MemError), S(LMGetMemErr), S(LMSetMemErr), S(MaxBlock), S(MoreMasterPointers), S(BlockMove),
-	{"BlockMoveData", sh_BlockMove}, {"HLockHi", sh_HLock}, S(HandToHand), S(HandAndHand), S(PtrToHand),
+	{"BlockMoveData", sh_BlockMove}, {"HLockHi", sh_HLock}, S(HandToHand), S(HandAndHand), S(PtrToHand), S(PtrToXHand),
 	S(PtrAndHand), S(SetGrowZone), S(GZSaveHnd),
 	{"NewGrowZoneUPP", sh_UPP}, {"DisposeGrowZoneUPP", sh_nop},
 	S(GetPtrSize), {"MoveHHi", sh_mem_ok}, {"HPurge", sh_mem_ok},

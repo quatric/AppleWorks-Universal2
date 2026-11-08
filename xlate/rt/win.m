@@ -89,8 +89,19 @@ static XLWinDelegate *delegate;
 	QPoint o = win_origin(win);
 	return (QPoint){(int16_t)(o.v + (int)floor(p.y)), (int16_t)(o.h + (int)floor(p.x))};
 }
+// scripted runs take their input from the script only: keys and clicks from the real keyboard and
+// mouse (the app comes to the front) would land in the documents under test
+static int real_input(void)
+{
+	static int scripted = -1;
+	if (scripted < 0)
+		scripted = getenv("PPC_SCRIPT") != NULL;
+	return !scripted;
+}
 - (void)mouse:(NSEvent *)e what:(int)what
 {
+	if (!real_input())
+		return;
 	Ev ev = {0};
 	ev.what = (uint16_t)what;
 	ev.where = [self globalOf:e];
@@ -104,6 +115,8 @@ static XLWinDelegate *delegate;
 - (void)rightMouseDown:(NSEvent *)e
 {
 	// a control-click, as on one-button mice
+	if (!real_input())
+		return;
 	Ev ev = {0};
 	ev.what = 1;
 	ev.where = [self globalOf:e];
@@ -162,6 +175,8 @@ static uint8_t mac_char(NSEvent *e)
 @implementation XLWinView (Keys)
 - (void)keyDown:(NSEvent *)e
 {
+	if (!real_input())
+		return;
 	Ev ev = {0};
 	ev.what = e.ARepeat ? 5 : 3;
 	ev.message = mac_char(e) | ((uint32_t)e.keyCode << 8);

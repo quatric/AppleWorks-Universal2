@@ -316,6 +316,22 @@ static void sh_ICStart(PPC *c) { if (A(0)) ST32(A(0), 0); RET(-108); }   // no I
 static void sh_AEInstallCoercionHandler(PPC *c) { RET(0); }
 static void sh_InitDateCache(PPC *c) { RET(0); }
 static void sh_LMGetApFontID(PPC *c) { RET(1); }   // applFont: Geneva
+static void sh_LMGetKbdType(PPC *c) { RET(0x0b); }  // an Apple Extended keyboard
+// LMGetCurApName: the application's name, a Pascal string
+static void sh_LMGetCurApName(PPC *c)
+{
+	static uint32_t name;
+	if (!name) {
+		static const char n[] = "AppleWorks 6";
+		name = gcalloc(32);
+		*(uint8_t *)G(name) = (uint8_t)(sizeof n - 1);
+		memcpy(G(name + 1), n, sizeof n - 1);
+	}
+	RET(name);
+}
+// the cursor is hidden only until the mouse moves (ObscureCursor); these balance nothing more
+static void sh_HideCursor(PPC *c) { (void)c; }
+static void sh_ShowCursor(PPC *c) { (void)c; }
 static void sh_GetCaretTime(PPC *c) { RET(32); }
 static void sh_CFStringCreateMutable(PPC *c) { RET(cf_tok(CFStringCreateMutable(NULL, (CFIndex)A(1)))); }
 static void sh_CFBundleGetMainBundle(PPC *c) { RET(cf_tok(CFBundleGetMainBundle())); }
@@ -684,7 +700,7 @@ static const ShimDef carbonshims[] = {
 	S(QDIsPortBuffered), S(CopyDeepMask), S(GetAvailableWindowPositioningBounds), S(ChangeWindowAttributes),
 	S(ReshapeCustomWindow), S(SetThemeWindowBackground), S(ShowHide), S(PaintOne), S(SetControlProperty),
 	S(NewCollection), S(FindNextComponent), S(ICStart), S(AEInstallCoercionHandler), S(InitDateCache),
-	S(LMGetApFontID), S(GetCaretTime), S(CFStringCreateMutable), S(CFBundleGetMainBundle), S(GetFrontProcess),
+	S(LMGetApFontID), S(LMGetKbdType), S(LMGetCurApName), S(HideCursor), S(ShowCursor), S(GetCaretTime), S(CFStringCreateMutable), S(CFBundleGetMainBundle), S(GetFrontProcess),
 	S(SameProcess),
 };
 REGISTER(carbonshims)

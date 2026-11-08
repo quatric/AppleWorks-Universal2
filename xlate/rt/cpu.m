@@ -234,11 +234,20 @@ void ppc_bad_resume(PPC *c, uint32_t pc)
 	abort();
 }
 
+// PPC_TRACE=1 logs every function entry; PPC_TRACE=hexaddr only that function's, with its caller
 void ppc_trace_fn(PPC *c, uint32_t addr)
 {
-	(void)c;
+	static uint32_t only = 1;
+	if (only == 1) {
+		const char *v = getenv("PPC_TRACE");
+		only = v ? (uint32_t)strtoul(v, NULL, 16) : 0;
+		if (only == 1)
+			only = 0;
+	}
+	if (only && addr != only)
+		return;
 	const PPCFunc *f = find_func(addr);
-	ppc_log("fn %08x %s r3=%08x r4=%08x r1=%08x r27=%08x c=%p", addr, f && f->name[0] ? f->name : "", c->r[3], c->r[4], c->r[1], c->r[27], (void *)c);
+	ppc_log("fn %08x %s r3=%08x r4=%08x r5=%08x r1=%08x r2=%08x r13=%08x r30=%08x r31=%08x lr=%08x", addr, f && f->name[0] ? f->name : "", c->r[3], c->r[4], c->r[5], c->r[1], c->r[2], c->r[13], c->r[30], c->r[31], c->lr);
 }
 
 void ppc_backtrace(PPC *c)

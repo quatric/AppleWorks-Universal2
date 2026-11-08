@@ -1552,6 +1552,18 @@ static void sh_GetFontInfo(PPC *c)
 }
 static void sh_GetFNum(PPC *c) { ST16(A(1), qd_font_num(pstr_ns(A(0)))); }
 static void sh_GetFontName(PPC *c) { ns_pstr(qd_font_name((int16_t)A(0)), A(1)); }
+// FMGetFontFamilyFromName(Str255): the family's number, as GetFNum
+static void sh_FMGetFontFamilyFromName(PPC *c) { RET((uint32_t)(uint16_t)qd_font_num(pstr_ns(A(0)))); }
+// FMGetFontFamilyTextEncoding(family, TextEncoding *): every family is Mac Roman
+static void sh_FMGetFontFamilyTextEncoding(PPC *c) { if (A(1)) ST32(A(1), 0); RET(0); }
+// RevertTextEncodingToScriptInfo(encoding, ScriptCode *, LangCode *, Str255 fontName): Roman, English
+static void sh_RevertTextEncodingToScriptInfo(PPC *c)
+{
+	if (A(1)) ST16(A(1), 0);
+	if (A(2)) ST16(A(2), 0);
+	if (A(3)) ST8(A(3), 0);
+	RET(0);
+}
 static void sh_GetSysFont(PPC *c) { RET(0); }
 static void sh_GetAppFont(PPC *c) { RET(1); }
 static void sh_GetDefFontSize(PPC *c) { RET(12); }
@@ -1967,7 +1979,8 @@ static const ShimDef qdshims[] = {
 	S(SetRectRgn), S(RectRgn), S(OffsetRgn), S(InsetRgn), S(SectRgn), S(UnionRgn), S(XorRgn), S(DiffRgn), S(EmptyRgn),
 	S(PtInRgn), S(RectInRgn), S(GetRegionBounds), S(BitMapToRegion), S(OpenRgn), S(CloseRgn), S(TextFont),
 	S(TextFace), S(TextMode), S(TextSize), S(DrawString), S(DrawText), S(StdText), S(StdTxMeas), S(StringWidth),
-	S(TextWidth), S(CharWidth), S(GetFontInfo), S(GetFNum), S(GetFontName), S(GetSysFont), S(GetAppFont),
+	S(TextWidth), S(CharWidth), S(GetFontInfo), S(GetFNum), S(GetFontName), S(FMGetFontFamilyFromName), S(FMGetFontFamilyTextEncoding),
+	S(RevertTextEncodingToScriptInfo), S(GetSysFont), S(GetAppFont),
 	S(GetDefFontSize), S(SetOutlinePreferred), S(FMSwapFont), S(TruncString), S(NewGWorld), S(DisposeGWorld),
 	S(GetGWorld), S(SetGWorld), S(GetGWorldPixMap), S(LockPixels), {"UnlockPixels", sh_StdNop}, S(GetPixBaseAddr),
 	S(GetPixDepth), S(NewGWorldFromPtr), S(CopyBits), S(StdBits), S(CopyMask), S(SetStdCProcs), S(GetMainDevice),

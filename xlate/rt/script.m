@@ -10,6 +10,7 @@
 //   shot file [Title]   the front window's (or the titled window's) pixels as a PNG
 //   menu id item        a menu choice
 //   windows             log every window
+//   dump addr len       log len bytes of guest memory from hex addr
 //   quit
 // mods: any of cmd shift opt ctrl, joined with +
 #import <AppKit/AppKit.h>
@@ -253,6 +254,15 @@ static void run(const char *cmd)
 		for (Win *w = win_list(); w; w = w->next)
 			ppc_log("script: window %08x '%.*s' class %d visible %d frame %d,%d,%d,%d", w->tok, w->title[0], w->title + 1, w->wclass,
 				w->visible, w->frame.top, w->frame.left, w->frame.bottom, w->frame.right);
+	} else if (!strcmp(op, "dump")) {
+		uint32_t at = (uint32_t)strtoul(a, NULL, 16);
+		int n = atoi(b);
+		for (int i = 0; i < n; i += 16) {
+			char line[80] = {0};
+			for (int k = 0; k < 16 && i + k < n; k++)
+				sprintf(line + strlen(line), "%02x%s", LD8(at + i + k), k % 4 == 3 ? " " : "");
+			ppc_log("script: %08x: %s", at + i, line);
+		}
 	} else if (!strcmp(op, "shot"))
 		shot(a, b);
 	else if (!strcmp(op, "quit"))

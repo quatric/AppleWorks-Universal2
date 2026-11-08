@@ -833,5 +833,9 @@ static void sh_DrawPicture(PPC *c)
 	pict_draw(qd_port, G(HP(h)), HSize(h), RECT(A(1)));
 }
 
-static const ShimDef pictshims[] = {S(OpenPicture), S(ClosePicture), S(KillPicture), S(DrawPicture)};
+// PicComment(kind, dataSize, dataHandle): recorded pictures are kept as their pixels, where comments
+// (PostScript, grouping and the like) change nothing
+static void sh_PicComment(PPC *c) { (void)c; }
+
+static const ShimDef pictshims[] = {S(OpenPicture), S(ClosePicture), S(KillPicture), S(DrawPicture), S(PicComment)};
 REGISTER(pictshims)

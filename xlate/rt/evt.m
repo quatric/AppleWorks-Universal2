@@ -492,6 +492,13 @@ static void sh_InstallEventHandler(PPC *c)
 		ST32(A(5), gcalloc(4));
 	RET(0);
 }
+// RemoveEventHandler(EventHandlerRef): the handlers are never called here; the reference goes
+static void sh_RemoveEventHandler(PPC *c)
+{
+	if (A(0))
+		gfree(A(0));
+	RET(0);
+}
 static void sh_CallNextEventHandler(PPC *c) { RET(-9874); }   // eventNotHandledErr
 static void sh_GetEventParameter(PPC *c) { RET(-9870); }      // eventParameterNotFoundErr
 static void sh_ConvertEventRefToEventRecord(PPC *c) { RET(0); }
@@ -532,7 +539,7 @@ static void sh_GetKeys(PPC *c)
 static const ShimDef evshims[] = {
 	S(WaitNextEvent), S(GetNextEvent), S(StillDown), S(WaitMouseUp), S(WaitMouseMoved), S(GetMouse), S(GetGlobalMouse),
 	S(TickCount), S(GetDblTime), S(GetCurrentKeyModifiers), S(Delay), S(FlushEvents), S(SysBeep), S(IsCmdChar),
-	S(InstallEventHandler), S(CallNextEventHandler), S(GetEventParameter), S(ConvertEventRefToEventRecord),
+	S(InstallEventHandler), S(RemoveEventHandler), S(CallNextEventHandler), S(GetEventParameter), S(ConvertEventRefToEventRecord),
 	S(GetCurrentEventLoop), S(GetApplicationEventTarget), {"NewEventHandlerUPP", sh_upp_keep},
 	S(EventAvail), S(GetKeys), S(TrackMouseLocation), S(TrackMouseLocationWithOptions),
 };

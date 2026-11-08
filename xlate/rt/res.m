@@ -444,6 +444,27 @@ static void sh_GetIndResource(PPC *c)
 	res_err = -192;
 	RET(0);
 }
+// the one-deep calls: the current file only
+static void sh_Count1Resources(PPC *c)
+{
+	int n = 0;
+	for (int i = 0; cur && i < cur->n; i++)
+		n += cur->res[i]->type == A(0);
+	res_err = 0;
+	RET(n);
+}
+static void sh_Get1IndResource(PPC *c)
+{
+	int k = (int16_t)A(1);
+	for (int i = 0; cur && i < cur->n; i++)
+		if (cur->res[i]->type == A(0) && --k == 0) {
+			res_err = 0;
+			RET(load(cur->res[i]));
+			return;
+		}
+	res_err = -192;
+	RET(0);
+}
 static void sh_ReleaseResource(PPC *c)
 {
 	Res *r = hm_get(&by_handle, A(0));
@@ -610,10 +631,9 @@ static void sh_FSOpenResourceFile(PPC *c)
 	res_err = f ? 0 : (err ? err : -43);
 	RET((int32_t)res_err);
 }
-static void sh_FSpCreateResFile(PPC *c)
+// a file with an empty resource map (and the type and creator, when given)
+static void create_res_file(const char *path, int set_type, uint32_t type, uint32_t creator)
 {
-	char p[1024];
-	const char *path = fsspec_path(A(0), p, sizeof p);
 	if (!path) {
 		res_err = -43;
 		return;
@@ -622,7 +642,8 @@ static void sh_FSpCreateResFile(PPC *c)
 	FILE *fp = fopen(path, "ab");
 	if (fp)
 		fclose(fp);
-	fs_set_type(path, A(2), A(1));
+	if (set_type)
+		fs_set_type(path, type, creator);
 	RFile tmp = {0};
 	snprintf(tmp.path, sizeof tmp.path, "%s", path);
 	tmp.writable = 1;
@@ -632,6 +653,19 @@ static void sh_FSpCreateResFile(PPC *c)
 	if (!d.length)
 		write_file(&tmp);
 	res_err = 0;
+}
+static void sh_FSpCreateResFile(PPC *c)
+{
+	// FSpCreateResFile(spec, creator, fileType, scriptTag)
+	char p[1024];
+	create_res_file(fsspec_path(A(0), p, sizeof p), 1, A(2), A(1));
+}
+static void sh_HCreateResFile(PPC *c)
+{
+	// HCreateResFile(vRefNum, dirID, fileName)
+	extern const char *fs_path3(int16_t vref, int32_t dir, uint32_t name, char *out, size_t n);
+	char p[1024];
+	create_res_file(fs_path3((int16_t)A(0), (int32_t)A(1), A(2), p, sizeof p), 0, 0, 0);
 }
 
 // strings
@@ -659,10 +693,10 @@ static void sh_GetIntlResource(PPC *c) { RET(res_get(A(0) == 0 ? 'itl0' : A(0) =
 
 static const ShimDef resshims[] = {
 	S(CurResFile), S(UseResFile), S(ResError), S(SetResLoad), S(LMGetResLoad), S(GetResource), S(Get1Resource),
-	S(GetNamedResource), S(Get1NamedResource), S(CountResources), S(GetIndResource), S(ReleaseResource),
+	S(GetNamedResource), S(Get1NamedResource), S(CountResources), S(GetIndResource), S(Count1Resources), S(Get1IndResource), S(ReleaseResource),
 	S(DetachResource), S(GetResInfo), S(SetResInfo), S(GetResAttrs), S(SetResAttrs), S(AddResource),
 	S(ChangedResource), S(RemoveResource), S(WriteResource), S(UpdateResFile), S(CloseResFile), S(FSpOpenResFile),
-	S(HOpenResFile), S(FSOpenResourceFile), S(FSpCreateResFile), S(GetString), S(GetIndString), S(GetPicture),
+	S(HOpenResFile), S(FSOpenResourceFile), S(FSpCreateResFile), S(HCreateResFile), S(GetString), S(GetIndString), S(GetPicture),
 	S(GetCursor), S(GetIntlResource),
 };
 REGISTER(resshims)

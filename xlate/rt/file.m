@@ -313,6 +313,8 @@ static int16_t fork_open(const char *path, int perm)
 		if (!forks[i].fd) {
 			forks[i].fd = fd + 1;
 			snprintf(forks[i].path, sizeof forks[i].path, "%s", path);
+			if (ppc_verbose)
+				ppc_log("fs: open %s -> %d", path, i * 2 + 1000);
 			return (int16_t)(i * 2 + 1000);
 		}
 	close(fd);
@@ -372,6 +374,12 @@ static void sh_FSWrite(PPC *c)
 		return;
 	}
 	uint32_t want = LD32(A(1));
+	if (getenv("PPC_DBG_WRITE")) {
+		char b[80] = {0};
+		for (uint32_t i = 0; i < want && i < 24; i++)
+			sprintf(b + strlen(b), "%02x", LD8(A(2) + i));
+		ppc_log("fs: write %d at %lld: %u bytes from %08x: %s (lr %08x)", (int16_t)A(0), (long long)lseek(fd, 0, SEEK_CUR), want, A(2), b, c->lr);
+	}
 	ssize_t put = write(fd, G(A(2)), want);
 	if (put < 0) {
 		ST32(A(1), 0);
@@ -391,6 +399,8 @@ static void sh_FSClose(PPC *c)
 		return;
 	}
 	close(fd);
+	if (ppc_verbose)
+		ppc_log("fs: close %d %s", ref, forks[(ref - 1000) / 2].path);
 	forks[(ref - 1000) / 2].fd = 0;
 	RET(0);
 }
@@ -467,6 +477,211 @@ static void sh_SetFPos(PPC *c)
 	RET(err);
 }
 
+
+static off_t fork_seek(int fd, int mode, int64_t off, int *err);
+
+// ---- parameter block I/O: an IOParam (ioResult 16, ioRefNum 24, ioMisc 28, ioBuffer 32,
+// ioReqCount 36, ioActCount 40, ioPosMode 44, ioPosOffset 46) ---------------------------------
+
+static int pb_fd(PPC *c, uint32_t pb)
+{
+	int fd = fork_fd((int16_t)LD16(pb + 24));
+	if (fd < 0) {
+		ST16(pb + 16, (uint16_t)-51);
+		RET((uint32_t)-51);
+	}
+	return fd;
+}
+static void pb_result(PPC *c, uint32_t pb, int err)
+{
+	ST16(pb + 16, (uint16_t)err);
+	RET((uint32_t)err);
+}
+// the position ioPosMode and ioPosOffset ask for (-1, and *err set, when it is out of the file)
+static off_t pb_seek(int fd, uint32_t pb, int *err)
+{
+	int64_t off = (int32_t)LD32(pb + 46);
+	off_t to = fork_seek(fd, (int16_t)LD16(pb + 44), off, err);
+	return *err ? -1 : to;
+}
+static NSString *hpb_path(uint32_t pb);
+
+// PBHOpenDFSync / PBHOpenRFSync: HParamBlockRec ioNamePtr 18, ioVRefNum 22, ioRefNum 24 (out),
+// ioPermssn 27, ioDirID 48
+static void pb_open(PPC *c, int rsrc)
+{
+	uint32_t pb = A(0);
+	NSString *p = hpb_path(pb);
+	BOOL d;
+	if (!p || !exists(p, &d) || d) {
+		pb_result(c, pb, -43);
+		return;
+	}
+	int perm = (int8_t)LD8(pb + 27);
+	char q[1100];
+	snprintf(q, sizeof q, rsrc ? "%s/..namedfork/rsrc" : "%s", p.fileSystemRepresentation);
+	if (rsrc && perm != 1) {
+		int fd = open(q, O_RDWR | O_CREAT, 0644);
+		if (fd >= 0)
+			close(fd);
+	}
+	int16_t ref = fork_open(q, perm);
+	if (!ref) {
+		pb_result(c, pb, -54);
+		return;
+	}
+	ST16(pb + 24, (uint16_t)ref);
+	pb_result(c, pb, 0);
+}
+static void sh_PBHOpenDFSync(PPC *c) { pb_open(c, 0); }
+static void sh_PBHOpenRFSync(PPC *c) { pb_open(c, 1); }
+static void sh_PBCloseSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	int16_t ref = (int16_t)LD16(pb + 24);
+	if (fork_fd(ref) < 0) {
+		pb_result(c, pb, -51);
+		return;
+	}
+	close(fork_fd(ref));
+	forks[(ref - 1000) / 2].fd = 0;
+	pb_result(c, pb, 0);
+}
+// PBGetFCBInfoSync: an open fork's information (FCBPBRec: ioNamePtr 18, ioVRefNum 22, ioRefNum 24,
+// ioFCBIndx 28, ioFCBFlNm 32, ioFCBFlags 36, ioFCBStBlk 38, ioFCBEOF 40, ioFCBPLen 44, ioFCBCrPs 48,
+// ioFCBVRefNum 52, ioFCBClpSiz 54, ioFCBParID 58)
+static void sh_PBGetFCBInfoSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	int16_t ref = (int16_t)LD16(pb + 24);
+	int idx = (int16_t)LD16(pb + 28);
+	if (idx > 0) {
+		// the idx-th open fork
+		int k = 0;
+		ref = 0;
+		for (int i = 1; i < 64; i++)
+			if (forks[i].fd && ++k == idx) {
+				ref = (int16_t)(i * 2 + 1000);
+				break;
+			}
+		ST16(pb + 24, (uint16_t)ref);
+	}
+	int fd = fork_fd(ref);
+	if (fd < 0) {
+		pb_result(c, pb, idx > 0 ? -38 : -51);   // fnOpnErr past the last, rfNumErr
+		return;
+	}
+	Fork *f = &forks[(ref - 1000) / 2];
+	char base[1024];
+	snprintf(base, sizeof base, "%s", f->path);
+	char *nf = strstr(base, "/..namedfork/");
+	if (nf)
+		*nf = 0;
+	NSString *ps = @(base);
+	struct stat st;
+	fstat(fd, &st);
+	if (LD32(pb + 18))
+		ns_pstr(mac_name(ps.lastPathComponent), LD32(pb + 18));
+	ST16(pb + 22, (uint16_t)VREF);
+	ST32(pb + 32, (uint32_t)st.st_ino);
+	ST16(pb + 36, (uint16_t)((nf ? 0x0200 : 0) | 0x0100));   // resource fork, writable
+	ST16(pb + 38, 0);
+	ST32(pb + 40, (uint32_t)st.st_size);
+	ST32(pb + 44, (uint32_t)((st.st_size + 511) & ~511));
+	ST32(pb + 48, (uint32_t)lseek(fd, 0, SEEK_CUR));
+	ST16(pb + 52, (uint16_t)VREF);
+	ST32(pb + 54, 0);
+	ST32(pb + 58, (uint32_t)dir_id(ps.stringByDeletingLastPathComponent));
+	pb_result(c, pb, 0);
+}
+static void sh_PBGetEOFSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	int fd = pb_fd(c, pb);
+	struct stat st;
+	if (fd < 0)
+		return;
+	fstat(fd, &st);
+	ST32(pb + 28, (uint32_t)st.st_size);
+	pb_result(c, pb, 0);
+}
+static void sh_PBSetEOFSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	int fd = pb_fd(c, pb);
+	if (fd >= 0)
+		pb_result(c, pb, ftruncate(fd, LD32(pb + 28)) ? -34 : 0);
+}
+static void sh_PBGetFPosSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	int fd = pb_fd(c, pb);
+	if (fd < 0)
+		return;
+	ST32(pb + 46, (uint32_t)lseek(fd, 0, SEEK_CUR));
+	pb_result(c, pb, 0);
+}
+static void sh_PBSetFPosSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	int fd = pb_fd(c, pb), err;
+	if (fd < 0)
+		return;
+	off_t to = pb_seek(fd, pb, &err);
+	if (err) {
+		pb_result(c, pb, err);
+		return;
+	}
+	struct stat st;
+	fstat(fd, &st);
+	if (to > st.st_size) {
+		to = st.st_size;
+		err = -39;   // eofErr
+	}
+	lseek(fd, to, SEEK_SET);
+	ST32(pb + 46, (uint32_t)to);
+	pb_result(c, pb, err);
+}
+static void sh_PBReadSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	int fd = pb_fd(c, pb), err;
+	if (fd < 0)
+		return;
+	ST32(pb + 40, 0);
+	off_t to = pb_seek(fd, pb, &err);
+	if (err) {
+		pb_result(c, pb, err);
+		return;
+	}
+	lseek(fd, to, SEEK_SET);
+	uint32_t want = LD32(pb + 36);
+	ssize_t got = want ? read(fd, G(LD32(pb + 32)), want) : 0;
+	if (got < 0)
+		got = 0;
+	ST32(pb + 40, (uint32_t)got);
+	ST32(pb + 46, (uint32_t)lseek(fd, 0, SEEK_CUR));
+	pb_result(c, pb, (uint32_t)got < want ? -39 : 0);
+}
+static void sh_PBWriteSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	int fd = pb_fd(c, pb), err;
+	if (fd < 0)
+		return;
+	ST32(pb + 40, 0);
+	off_t to = pb_seek(fd, pb, &err);
+	if (err) {
+		pb_result(c, pb, err);
+		return;
+	}
+	lseek(fd, to, SEEK_SET);
+	uint32_t want = LD32(pb + 36);
+	ssize_t put = want ? write(fd, G(LD32(pb + 32)), want) : 0;
+	ST32(pb + 40, put < 0 ? 0 : (uint32_t)put);
+	ST32(pb + 46, (uint32_t)lseek(fd, 0, SEEK_CUR));
+	pb_result(c, pb, put < 0 ? -61 : 0);
+}
 
 // ---- FSRef forks (FSOpenFork and the 64-bit fork calls) -------------------------------------
 
@@ -721,7 +936,42 @@ static void sh_FSpDelete(PPC *c)
 		RET(-120);
 		return;
 	}
+	if (ppc_verbose)
+		ppc_log("fs: delete %s", p);
 	RET(unlink(p) == 0 || rmdir(p) == 0 ? 0 : -43);
+}
+
+// FSpSetFLock / FSpRstFLock: a file's lock is the Finder's, the user-immutable flag
+static void set_lock(PPC *c, int on)
+{
+	char p[1024];
+	struct stat st;
+	if (!fsspec_path(A(0), p, sizeof p) || stat(p, &st)) {
+		RET(-43);
+		return;
+	}
+	unsigned fl = on ? st.st_flags | UF_IMMUTABLE : st.st_flags & ~UF_IMMUTABLE;
+	RET(fl == st.st_flags || chflags(p, fl) == 0 ? 0 : -54);
+}
+static void sh_FSpSetFLock(PPC *c) { set_lock(c, 1); }
+static void sh_FSpRstFLock(PPC *c) { set_lock(c, 0); }
+
+// FSpRename(spec, newName): in the same folder
+static void sh_FSpRename(PPC *c)
+{
+	char p[1024];
+	if (!fsspec_path(A(0), p, sizeof p) || !exists(@(p), NULL)) {
+		RET(-43);
+		return;
+	}
+	NSString *to = [@(p).stringByDeletingLastPathComponent stringByAppendingPathComponent:host_name(G(A(1) + 1), LD8(A(1)))];
+	if (exists(to, NULL)) {
+		RET(-48);   // dupFNErr
+		return;
+	}
+	if (ppc_verbose)
+		ppc_log("fs: rename %s -> %s", p, to.fileSystemRepresentation);
+	RET(rename(p, to.fileSystemRepresentation) ? -120 : 0);
 }
 
 // HParamBlockRec: ioResult 16, ioNamePtr 18, ioVRefNum 22, ioDirID 48
@@ -750,6 +1000,18 @@ static void sh_PBHCreateSync(PPC *c)
 	if (fd >= 0)
 		close(fd);
 	pb_done(c, A(0), fd >= 0 ? 0 : -120);
+}
+static void sh_HDelete(PPC *c)
+{
+	// HDelete(vRefNum, dirID, fileName)
+	char p[1024];
+	if (!fs_path3((int16_t)A(0), (int32_t)A(1), A(2), p, sizeof p)) {
+		RET(-120);
+		return;
+	}
+	if (ppc_verbose)
+		ppc_log("fs: delete %s", p);
+	RET(unlink(p) == 0 || rmdir(p) == 0 ? 0 : -43);
 }
 static void sh_PBHDeleteSync(PPC *c)
 {
@@ -980,6 +1242,43 @@ static void sh_PBGetCatInfoSync(PPC *c)
 	RET(0);
 }
 
+// PBHGetFInfoSync: a file's information (an HFileParam, laid out as the file case of a CInfoPBRec)
+static void sh_PBHGetFInfoSync(PPC *c)
+{
+	uint32_t pb = A(0);
+	if ((int16_t)LD16(pb + 28) > 0) {
+		// by index: the index-th file of the directory (folders not counted)
+		uint32_t namep = LD32(pb + 18);
+		NSString *d = resolve((int16_t)LD16(pb + 22), (int32_t)LD32(pb + 48), NULL, 0);
+		int want = (int16_t)LD16(pb + 28), k = 0;
+		NSString *found = nil;
+		for (NSString *e in d ? listing(d) : @[]) {
+			BOOL isdir;
+			if (exists([d stringByAppendingPathComponent:e], &isdir) && !isdir && ++k == want) {
+				found = e;
+				break;
+			}
+		}
+		if (!found) {
+			pb_done(c, pb, -43);
+			return;
+		}
+		if (!namep) {
+			pb_done(c, pb, -43);
+			return;
+		}
+		ns_pstr(mac_name(found), namep);
+		ST16(pb + 28, 0);
+		sh_PBGetCatInfoSync(c);
+		ST16(pb + 28, (uint16_t)want);
+		return;
+	}
+	ST16(pb + 28, 0);
+	sh_PBGetCatInfoSync(c);
+	if ((int16_t)LD16(pb + 16) == 0 && (LD8(pb + 30) & 0x10))
+		pb_done(c, pb, -43);   // a folder, not a file
+}
+
 static void sh_PBSetCatInfoSync(PPC *c)
 {
 	uint32_t pb = A(0);
@@ -992,6 +1291,10 @@ static void sh_PBSetCatInfoSync(PPC *c)
 	RET(0);
 }
 
+// HVolumeParam / XVolumeParam: ioResult 16, ioNamePtr 18, ioVRefNum 22, ioVolIndex 28, ioVCrDate 30,
+// ioVLsMod 34, ioVAtrb 38, ioVNmFls 40, ioVNmAlBlks 46, ioVAlBlkSiz 48, ioVClpSiz 52, ioVFrBlk 62,
+// ioVSigWord 64, ioVDRefNum 68, ioVFilCnt 82, ioVDirCnt 86; XVolumeParam adds ioVTotalBytes 122 and
+// ioVFreeBytes 130. One large volume with room to spare.
 static void sh_PBHGetVInfoSync(PPC *c)
 {
 	uint32_t pb = A(0);
@@ -1000,21 +1303,26 @@ static void sh_PBHGetVInfoSync(PPC *c)
 	ST16(pb + 22, VREF);
 	ST32(pb + 30, mac_date(0));      // ioVCrDate
 	ST32(pb + 34, mac_date(time(NULL)));
-	ST16(pb + 46, 0);                // ioVAtrb
-	ST16(pb + 48, 1000);             // ioVNmFls
-	ST16(pb + 52, 0xfffe);           // ioVNmAlBlks
-	ST32(pb + 54, 32768);            // ioVAlBlkSiz
-	ST16(pb + 70, 0xfff0);           // ioVFrBlk
+	ST16(pb + 38, 0);                // ioVAtrb: not locked
+	ST16(pb + 40, 1000);             // ioVNmFls
+	ST16(pb + 46, 0xfffe);           // ioVNmAlBlks
+	ST32(pb + 48, 32768);            // ioVAlBlkSiz
+	ST32(pb + 52, 32768);            // ioVClpSiz
+	ST16(pb + 62, 0xfff0);           // ioVFrBlk
+	ST16(pb + 64, 0x482b);           // ioVSigWord: 'H+'
+	ST16(pb + 68, VREF);             // ioVDRefNum
+	ST32(pb + 82, 1000);             // ioVFilCnt
+	ST32(pb + 86, 100);              // ioVDirCnt
 	ST16(pb + 16, 0);
 	RET(0);
 }
 
 static void sh_PBXGetVolInfoSync(PPC *c)
 {
+	uint32_t pb = A(0);   // (before the call below sets r3, the result)
 	sh_PBHGetVInfoSync(c);
-	uint32_t pb = A(0);
-	ST64(pb + 76, 1ull << 40);   // ioVTotalBytes
-	ST64(pb + 84, 1ull << 39);   // ioVFreeBytes
+	ST64(pb + 122, 1ull << 40);   // ioVTotalBytes
+	ST64(pb + 130, 1ull << 39);   // ioVFreeBytes
 	RET(0);
 }
 
@@ -1071,12 +1379,61 @@ static void sh_NewAlias(PPC *c)
 	RET(0);
 }
 
+// ResolveAlias(fromFile, alias, FSSpec *target, Boolean *wasChanged): the path NewAlias kept
+static void sh_ResolveAlias(PPC *c)
+{
+	uint32_t h = A(1);
+	if (!h || !HP(h) || HSize(h) < 8) {
+		RET(-35);
+		return;
+	}
+	uint32_t n = HSize(h) - 8;
+	char p[1024];
+	if (n >= sizeof p)
+		n = sizeof p - 1;
+	memcpy(p, G(HP(h) + 8), n);
+	p[n] = 0;
+	if (A(3))
+		ST8(A(3), 0);
+	if (!n) {
+		RET(-35);
+		return;
+	}
+	write_spec(A(2), @(p));
+	RET(exists(@(p), NULL) ? 0 : -43);
+}
+
+// GetAliasInfo(alias, index, Str63): 0 the target's name, 1.. its folders upward, -1 the volume
+static void sh_GetAliasInfo(PPC *c)
+{
+	uint32_t h = A(0), out = A(2);
+	ST8(out, 0);
+	if (!h || !HP(h) || HSize(h) <= 8) {
+		RET(-35);
+		return;
+	}
+	NSString *p = [[NSString alloc] initWithBytes:G(HP(h) + 8) length:HSize(h) - 8 encoding:NSUTF8StringEncoding];
+	int idx = (int16_t)A(1);
+	NSString *r = @"";
+	if (idx == -1)
+		r = @"Macintosh HD";
+	else if (idx >= 0) {
+		NSArray *parts = p.pathComponents;
+		NSInteger k = (NSInteger)parts.count - 1 - idx;
+		if (k >= 1)
+			r = mac_name(parts[k]);
+	}
+	ns_pstr(r.length > 63 ? [r substringToIndex:63] : r, out);
+	RET(0);
+}
+
 static const ShimDef fileshims[] = {
 	S(FSMakeFSSpec), S(FSpMakeFSRef), S(FSMakeFSRefUnicode), S(FSCreateFileUnicode), S(FSDeleteObject),
 	S(FSGetDataForkName), S(FSpOpenDF), S(FSRead), S(FSWrite), S(FSClose), S(FSCloseFork), S(GetEOF), S(SetEOF),
-	S(GetFPos), S(SetFPos), S(FSpCreate), S(FSpDelete), S(PBHCreateSync), S(PBHDeleteSync), S(FSGetCatalogInfo), S(FSpDirCreate), S(FSpGetFInfo), S(FSpSetFInfo),
+	S(GetFPos), S(SetFPos), S(FSpCreate), S(FSpDelete), S(FSpRename), S(FSpSetFLock), S(FSpRstFLock), S(PBHCreateSync), S(PBHDeleteSync), S(FSGetCatalogInfo), S(FSpDirCreate), S(FSpGetFInfo), S(FSpSetFInfo),
 	S(FSpExchangeFiles), S(PBGetCatInfoSync), S(PBSetCatInfoSync), S(PBHGetVInfoSync), S(PBXGetVolInfoSync),
-	S(FlushVol), S(FindFolder), S(NewAlias), S(FSOpenFork), S(FSReadFork), S(FSWriteFork),
+	S(FlushVol), S(FindFolder), S(NewAlias), S(ResolveAlias), S(GetAliasInfo), S(HDelete), S(PBHGetFInfoSync), S(FSOpenFork), S(FSReadFork), S(FSWriteFork),
 	S(FSSetForkPosition), S(FSGetForkPosition), S(FSGetForkSize), S(FSSetForkSize), S(FSFlushFork), S(FSGetForkCBInfo),
+	S(PBHOpenDFSync), {"PBHOpenSync", sh_PBHOpenDFSync}, S(PBHOpenRFSync), S(PBCloseSync), S(PBGetFCBInfoSync), S(PBGetEOFSync), S(PBSetEOFSync), S(PBGetFPosSync), S(PBSetFPosSync), S(PBReadSync), S(PBWriteSync),
 };
 REGISTER(fileshims)
