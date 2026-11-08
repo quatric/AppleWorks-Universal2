@@ -298,6 +298,16 @@ void script_tick(void)
 	}
 	if (next_step >= nsteps)
 		return;
+	// the clock starts when the app has a window showing, however long its start takes
+	static int ready;
+	if (!ready) {
+		for (Win *w = win_list(); w; w = w->next)
+			if (w->visible)
+				ready = 1;
+		if (!ready)
+			return;
+		t_start = CFAbsoluteTimeGetCurrent();
+	}
 	double now = CFAbsoluteTimeGetCurrent() - t_start;
 	while (next_step < nsteps && steps[next_step].t <= now) {
 		if (!step_ready(steps[next_step].cmd, now - steps[next_step].t))
