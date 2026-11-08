@@ -19,7 +19,10 @@ uint32_t res_get(uint32_t type, int16_t id, int one);
 
 @interface XLWindow : NSWindow
 @end
+int qd_guest_screen_is_virtual(void);
 @implementation XLWindow
+// the virtual display is not an NSScreen: keep AppKit from pulling windows onto the user's own screen
+- (NSRect)constrainFrameRect:(NSRect)r toScreen:(NSScreen *)screen { return qd_guest_screen_is_virtual() ? r : [super constrainFrameRect:r toScreen:screen]; }
 - (BOOL)canBecomeKeyWindow { return YES; }
 - (BOOL)canBecomeMainWindow { return YES; }
 @end
@@ -27,6 +30,7 @@ uint32_t res_get(uint32_t type, int16_t id, int one);
 @interface XLPanel : NSPanel
 @end
 @implementation XLPanel
+- (NSRect)constrainFrameRect:(NSRect)r toScreen:(NSScreen *)screen { return qd_guest_screen_is_virtual() ? r : [super constrainFrameRect:r toScreen:screen]; }
 - (BOOL)canBecomeKeyWindow { return YES; }
 @end
 
@@ -541,6 +545,12 @@ static Win *win_create(int wclass, uint32_t attrs, QRect bounds, const uint8_t *
 	case 5: case 7: case 8: style = NSWindowStyleMaskTitled | NSWindowStyleMaskUtilityWindow; panel = YES; break;
 	case 1: case 2: case 3: case 4: style = NSWindowStyleMaskTitled; break;   // alerts, modal dialogs
 	default: style = NSWindowStyleMaskTitled | NSWindowStyleMaskMiniaturizable; break;
+	}
+	{   // a window that fills the screen (a slide show) has no title bar
+		QRect sr = qd_screen_rect();
+		if ((wclass == 3 || wclass == 4) && bounds.right - bounds.left >= (sr.right - sr.left) * 9 / 10 &&
+		    bounds.bottom - bounds.top >= (sr.bottom - sr.top) * 9 / 10)
+			style = NSWindowStyleMaskBorderless;
 	}
 	if (style != NSWindowStyleMaskBorderless) {
 		if (attrs & 1)
