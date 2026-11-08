@@ -483,6 +483,18 @@ static void wdef_render(Win *w)
 		if (skirt) {
 			nw.opaque = NO;
 			nw.backgroundColor = NSColor.clearColor;
+			// a window that is not opaque loses its title bar's fill: give it one
+			NSView *tb = [nw standardWindowButton:NSWindowCloseButton].superview;
+			if (tb && !tb.subviews.firstObject.identifier) {
+				NSVisualEffectView *fx = [[NSVisualEffectView alloc] initWithFrame:tb.bounds];
+				fx.identifier = @"xl-titlefill";
+				fx.material = NSVisualEffectMaterialTitlebar;
+				fx.blendingMode = NSVisualEffectBlendingModeWithinWindow;
+				fx.state = NSVisualEffectStateActive;
+				fx.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+				[tb addSubview:fx positioned:NSWindowBelow relativeTo:nil];
+				[fx release];
+			}
 		}
 		[nw setFrame:[nw frameRectForContentRect:win_cocoa_rect(w)] display:NO];
 		[(XLWinView *)w->view setFrame:NSMakeRect(0, 0, wd, w->frame.bottom - w->frame.top + skirt)];
@@ -819,6 +831,7 @@ static void sh_DisposeWindow(PPC *c) { Win *w = WIN(A(0)); if (w) win_dispose(w)
 static void sh_ShowWindow(PPC *c) { Win *w = WIN(A(0)); if (w) win_show(w); }
 static void sh_HideWindow(PPC *c) { Win *w = WIN(A(0)); if (w) win_hide(w); }
 static void sh_SelectWindow(PPC *c) { Win *w = WIN(A(0)); if (w) select_window(w); }
+static void sh_BringToFront(PPC *c) { Win *w = WIN(A(0)); if (w) select_window(w); }
 static void sh_HiliteWindow(PPC *c) { Win *w = WIN(A(0)); if (w && w->hilited != (int)(A(1) & 0xff)) { w->hilited = A(1) & 0xff; wdef_render(w); } }
 static void sh_SendBehind(PPC *c)
 {
@@ -1204,7 +1217,7 @@ static void sh_FindWindow_(PPC *c)
 
 static const ShimDef winshims[] = {
 	S(NewCWindow), S(GetNewCWindow), S(CreateNewWindow), S(CreateCustomWindow), S(DisposeWindow), S(ShowWindow),
-	S(HideWindow), S(SelectWindow), S(HiliteWindow), S(SendBehind), S(FrontWindow), S(FrontNonFloatingWindow),
+	S(HideWindow), S(SelectWindow), S(BringToFront), S(HiliteWindow), S(SendBehind), S(FrontWindow), S(FrontNonFloatingWindow),
 	S(GetFrontWindowOfClass), S(GetNextWindowOfClass), S(GetWindowList), S(GetNextWindow), S(GetWRefCon),
 	S(SetWRefCon), S(GetWTitle), S(SetWTitle), S(GetWindowKind), S(SetWindowKind), S(GetWindowClass),
 	S(GetWindowPort), S(SetPortWindowPort), S(GetWindowFromPort), S(IsWindowVisible), S(IsValidWindowPtr),

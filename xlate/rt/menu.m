@@ -435,6 +435,7 @@ static void sh_GetMenu(PPC *c)
 	RET(menu_load(id));
 }
 static void sh_NewMenu(PPC *c) { RET(menu_new((int16_t)A(0), G(A(1)))->h); }
+static void sh_GetMCEntry(PPC *c) { (void)c; RET(0); }   // no menu color table entries
 static void sh_GetMenuHandle(PPC *c) { RET(menu_get_handle((int16_t)A(0))); }
 static void sh_GetMenuID(PPC *c) { Menu *m = M(A(0)); RET(m ? (uint32_t)(int32_t)m->id : 0); }
 static void sh_InsertMenu(PPC *c)
@@ -830,7 +831,7 @@ static void sh_SetMenuTitle(PPC *c) { Menu *m = M(A(0)); if (m) { memcpy(m->titl
 static void sh_CalcMenuSize(PPC *c) { (void)c; }
 
 static const ShimDef menushims[] = {
-	S(GetMenu), S(NewMenu), S(GetMenuHandle), S(GetMenuID), S(InsertMenu), S(DeleteMenu), S(DisposeMenu),
+	S(GetMenu), S(NewMenu), S(GetMenuHandle), S(GetMCEntry), S(GetMenuID), S(InsertMenu), S(DeleteMenu), S(DisposeMenu),
 	S(GetMenuBar), S(SetMenuBar), S(DrawMenuBar), S(InvalMenuBar), S(HiliteMenu), S(FlashMenuBar), S(GetMBarHeight), S(ClearMenuBar),
 	S(AppendMenu), S(InsertMenuItem), S(DeleteMenuItem), S(CountMenuItems), S(AppendResMenu), S(InsertResMenu),
 	S(EnableMenuItem), S(DisableMenuItem), S(IsMenuItemEnabled), S(CheckMenuItem), S(SetItemMark), S(GetItemMark),
@@ -845,3 +846,15 @@ static const ShimDef menushims[] = {
 	S(SetMenuItemKeyGlyph),
 };
 REGISTER(menushims)
+
+// debugging: the menu bar's menus and items, to the log
+void menu_dump(void)
+{
+	for (int i = 0; i < nbar; i++) {
+		Menu *m = bar[i];
+		ppc_log("menu %d '%.*s'", m->id, m->title[0], m->title + 1);
+		for (int k = 0; k < m->n; k++)
+			ppc_log("  item %d '%.*s' %s cmd '%c'", k + 1, m->items[k].text[0], m->items[k].text + 1,
+				m->items[k].enabled ? "on" : "off", m->items[k].cmd >= 32 ? m->items[k].cmd : ' ');
+	}
+}

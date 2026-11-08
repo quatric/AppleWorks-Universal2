@@ -96,6 +96,13 @@ static void sh_IdenticalString(PPC *c)
 	RET(mac_cmp(G(a + 1), LD8(a), G(b + 1), LD8(b), 1) != 0);
 }
 static void sh_IdenticalText(PPC *c) { RET(mac_cmp(G(A(0)), (int16_t)A(2), G(A(1)), (int16_t)A(3), 1) != 0); }
+static void sh_CompareString(PPC *c)
+{
+	// CompareString(Str255 a, Str255 b, Handle itl2): -1, 0 or 1, ignoring case
+	uint32_t a = A(0), b = A(1);
+	int r = mac_cmp(G(a + 1), LD8(a), G(b + 1), LD8(b), 0);
+	RET(r < 0 ? -1 : r > 0 ? 1 : 0);
+}
 static void sh_CompareText(PPC *c)
 {
 	NSString *x = mac_ns(G(A(0)), (int16_t)A(2)), *y = mac_ns(G(A(1)), (int16_t)A(3));
@@ -577,7 +584,7 @@ static void sh_CreateTextEncoding(PPC *c) { RET((A(2) & 0x3f) << 26 | (A(1) & 0x
 static void sh_GetSysDirection(PPC *c) { RET(0); }
 
 static const ShimDef miscshims[] = {
-	S(Gestalt), S(NumToString), S(StringToNum), S(EqualString), S(IdenticalString), S(IdenticalText), S(CompareText),
+	S(Gestalt), S(NumToString), S(StringToNum), S(EqualString), S(IdenticalString), S(IdenticalText), S(CompareText), S(CompareString),
 	S(UpperString), S(UppercaseText), S(CopyCStringToPascal), S(CopyPascalStringToC), S(StyledLineBreak),
 	S(VisibleLength), S(Long2Fix), S(BitTst), S(Random), S(sin), S(cos), S(sqrt), S(floor), S(ceil), S(log10),
 	S(pow), S(nan), S(x80tod), S(num2dec), S(dec2num), S(dec2str), S(StringToFormatRec), S(StringToExtended),

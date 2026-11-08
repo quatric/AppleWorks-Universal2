@@ -6,6 +6,7 @@
 #include "te.h"
 #include "icons.h"
 #include "menu.h"
+#include "rgn.h"
 #include "pict.h"
 
 static HMap ctls;   // ControlHandle -> Ctl
@@ -1182,6 +1183,17 @@ static void sh_SetControlMaximum(PPC *c)
 	ctl_draw(k);
 }
 static void sh_SetControlViewSize(PPC *c) { Ctl *k = C0; if (k) { k->viewSize = A(1); ctl_draw(k); } }
+static void sh_GetControlRegion(PPC *c)
+{
+	// GetControlRegion(control, part, RgnHandle): the control's bounds
+	Ctl *k = C0;
+	Rgn *g = RGN(A(2));
+	if (!k || !g)
+		RET(-30585);   // errCtlPartNotAvailable-style failure
+	rgn_set_rect(g, k->r);
+	rgn_sync(A(2));
+	RET(0);
+}
 static void sh_GetControlBounds(PPC *c) { Ctl *k = C0; if (k) PUTRECT(A(1), k->r); RET(A(1)); }
 static void sh_SetControlBounds(PPC *c)
 {
@@ -1725,7 +1737,7 @@ static const ShimDef ctlshims[] = {
 	S(HideControl), S(SetControlVisibility), S(IsControlVisible), S(ActivateControl), S(DeactivateControl),
 	S(IsControlActive), S(HiliteControl), S(IsControlHilited), S(GetControlValue), S(GetControlMinimum),
 	S(GetControlMaximum), S(SetControlValue), S(SetControlMinimum), S(SetControlMaximum), S(SetControlViewSize),
-	S(GetControlBounds), S(SetControlBounds), S(SetControlTitle), S(GetControlTitle), S(SetControlReference),
+	S(GetControlRegion), S(GetControlBounds), S(SetControlBounds), S(SetControlTitle), S(GetControlTitle), S(SetControlReference),
 	S(GetControlReference), S(SetControlAction), S(GetControlVariant), S(GetControlFeatures), S(SetControlFontStyle),
 	S(SetControlColorProc), S(TestControl), S(TrackControl), S(HandleControlClick), S(HandleControlKey),
 	S(SetKeyboardFocus), S(SendControlMessage), S(SetControlData), S(GetControlData), S(CreatePopupButtonControl),

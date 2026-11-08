@@ -297,7 +297,7 @@ static const ShimDef printshims[] = {
 	S(PMCreateSession), S(PMCreatePageFormat), S(PMCreatePrintSettings), S(PMRelease), S(PMRetain),
 	{"PMSessionDefaultPageFormat", sh_PMok}, {"PMSessionDefaultPrintSettings", sh_PMok},
 	{"PMSessionValidatePageFormat", sh_PMValidate}, {"PMSessionValidatePrintSettings", sh_PMValidate},
-	{"PMDefaultPageFormat", sh_PMok}, {"PMDefaultPrintSettings", sh_PMok},
+	{"PMSetJobNameCFString", sh_PMok}, {"PMDefaultPageFormat", sh_PMok}, {"PMDefaultPrintSettings", sh_PMok},
 	{"PMValidatePageFormat", sh_PMValidateOld}, {"PMValidatePrintSettings", sh_PMValidateOld},
 	{"PMBegin", sh_PMok}, {"PMEnd", sh_PMok}, {"PMDisposePageFormat", sh_PMok}, {"PMDisposePrintSettings", sh_PMok},
 	S(PMSessionPageSetupDialog), S(PMPageSetupDialog), S(PMSessionPrintDialog), S(PMPrintDialog),

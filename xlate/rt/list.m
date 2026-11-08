@@ -732,6 +732,8 @@ static void sh_GetListDataBounds(PPC *c) { List *l = L(A(0)); if (l) PUTRECT(A(1
 static void sh_GetListVisibleCells(PPC *c) { List *l = L(A(0)); if (l) { lsync(l); PUTRECT(A(1), RECT(HP(l->h) + 20)); } RET(A(1)); }
 static void sh_GetListCellSize(PPC *c) { List *l = L(A(0)); if (l) STPT(A(1), l->csize); RET(A(1)); }
 static void sh_SetListRefCon(PPC *c) { List *l = L(A(0)); if (l) ST32(HP(l->h) + 60, A(1)); }
+static void sh_SetListUserHandle(PPC *c) { List *l = L(A(0)); if (l) ST32(HP(l->h) + 64, A(1)); }
+static void sh_GetListUserHandle(PPC *c) { List *l = L(A(0)); RET(l ? LD32(HP(l->h) + 64) : 0); }
 static void sh_GetListRefCon(PPC *c) { List *l = L(A(0)); RET(l ? LD32(HP(l->h) + 60) : 0); }
 static void sh_GetListActive(PPC *c) { List *l = L(A(0)); RET(l && l->active); }
 
@@ -752,7 +754,7 @@ static const ShimDef listshims[] = {
 	S(LCellSize), S(LSize), S(LScroll), S(LAutoScroll), S(LSetDrawingMode), S(LUpdate), S(LDraw), S(LActivate), S(LSetSelect),
 	S(LGetSelect), S(LNextCell), S(LLastClick), {"LClick", sh_LClickWrapper}, S(GetListViewBounds),
 	S(GetListVerticalScrollBar), S(GetListHorizontalScrollBar), S(SetListSelectionFlags), S(GetListSelectionFlags),
-	S(GetListDataBounds), S(GetListVisibleCells), S(GetListCellSize), S(SetListRefCon), S(GetListRefCon),
+	S(GetListDataBounds), S(GetListVisibleCells), S(GetListCellSize), S(SetListRefCon), S(GetListRefCon), S(SetListUserHandle), S(GetListUserHandle),
 	S(GetListActive),
 };
 REGISTER(listshims)

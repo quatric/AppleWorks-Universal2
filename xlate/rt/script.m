@@ -250,6 +250,9 @@ static void run(const char *cmd)
 		e.part = 1;
 		e.data = (uint32_t)(uint16_t)atoi(a) << 16 | (uint16_t)atoi(b);
 		ev_post(e);
+	} else if (!strcmp(op, "menus")) {
+		extern void menu_dump(void);
+		menu_dump();
 	} else if (!strcmp(op, "windows")) {
 		for (Win *w = win_list(); w; w = w->next)
 			ppc_log("script: window %08x '%.*s' class %d visible %d frame %d,%d,%d,%d", w->tok, w->title[0], w->title + 1, w->wclass,

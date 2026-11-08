@@ -350,6 +350,8 @@ static void sh_DisposeCollection(PPC *c) { if (A(0)) gfree(A(0)); }
 static void sh_GetTheme(PPC *c) { RET(0); }
 static void sh_GetCollectionItem(PPC *c) { RET(-5752); }   // collectionItemNotFoundErr
 
+static void sh_RestoreDeviceClut(PPC *c) { (void)c; }   // the display needs no palette
+static void sh_CFAllocatorGetDefault(PPC *c) { RET(cf_tok(CFAllocatorGetDefault())); }
 static void sh_CFStringGetSystemEncoding(PPC *c) { RET(0); }   // kCFStringEncodingMacRoman
 static void sh_CFStringAppendCString(PPC *c)
 {
@@ -692,7 +694,7 @@ static const ShimDef carbonshims[] = {
 	S(DeviceLoop),
 	S(InvokeWindowDefUPP), S(InvokeModalFilterUPP), S(InvokeQDBitsUPP), S(InvokeQDCommentUPP), S(InvokeQDRgnUPP),
 	S(InvokePMItemUPP), S(InvokeOSASendUPP),
-	S(DisposeCollection), S(GetTheme), S(GetCollectionItem), S(CFStringGetSystemEncoding), S(CFStringAppendCString),
+	S(DisposeCollection), S(GetTheme), S(GetCollectionItem), S(CFStringGetSystemEncoding), S(CFAllocatorGetDefault), S(RestoreDeviceClut), S(CFStringAppendCString),
 	S(CFBundleCopyResourcesDirectoryURL), S(GetThemeTextDimensions), S(IsPortColor), S(WakeUpProcess),
 	S(InstallEventLoopTimer), S(SetEventLoopTimerNextFireTime), S(RemoveEventLoopTimer), S(InsTime), S(PrimeTime),
 	S(RmvTime), {"InsXTime", sh_InsTime}, S(GetMainEventLoop), S(AddEventTypesToHandler),
