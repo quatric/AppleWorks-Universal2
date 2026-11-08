@@ -137,8 +137,9 @@ static void sh_SndDoImmediate(PPC *c)
 	RET(0);
 }
 static void sh_SndDoCommand(PPC *c) { (void)c; RET(0); }
+static void sh_PlayThemeSound(PPC *c) { (void)c; RET(0); }   // interface sounds are not played
 
 static const ShimDef sndshims[] = {
-	S(SndNewChannel), S(SndDisposeChannel), S(SndPlay), S(SndDoImmediate), S(SndDoCommand),
+	S(SndNewChannel), S(SndDisposeChannel), S(SndPlay), S(SndDoImmediate), S(SndDoCommand), S(PlayThemeSound),
 };
 REGISTER(sndshims)

@@ -1150,6 +1150,7 @@ static void sh_HiliteControl(PPC *c)
 		ctl_draw(k);
 	}
 }
+static void sh_GetControlHilite(PPC *c) { Ctl *k = C0; RET(k ? k->hilite : 0); }
 static void sh_IsControlHilited(PPC *c) { Ctl *k = C0; RET(k && k->hilite != 0 && k->hilite != 255); }
 static void sh_GetControlValue(PPC *c) { Ctl *k = C0; RET(k ? (uint32_t)(int32_t)k->value : 0); }
 static void sh_GetControlMinimum(PPC *c) { Ctl *k = C0; RET(k ? (uint32_t)(int32_t)k->min : 0); }
@@ -1737,7 +1738,7 @@ static const ShimDef ctlshims[] = {
 	S(HideControl), S(SetControlVisibility), S(IsControlVisible), S(ActivateControl), S(DeactivateControl),
 	S(IsControlActive), S(HiliteControl), S(IsControlHilited), S(GetControlValue), S(GetControlMinimum),
 	S(GetControlMaximum), S(SetControlValue), S(SetControlMinimum), S(SetControlMaximum), S(SetControlViewSize),
-	S(GetControlRegion), S(GetControlBounds), S(SetControlBounds), S(SetControlTitle), S(GetControlTitle), S(SetControlReference),
+	S(GetControlRegion), S(GetControlHilite), S(GetControlBounds), S(SetControlBounds), S(SetControlTitle), S(GetControlTitle), S(SetControlReference),
 	S(GetControlReference), S(SetControlAction), S(GetControlVariant), S(GetControlFeatures), S(SetControlFontStyle),
 	S(SetControlColorProc), S(TestControl), S(TrackControl), S(HandleControlClick), S(HandleControlKey),
 	S(SetKeyboardFocus), S(SendControlMessage), S(SetControlData), S(GetControlData), S(CreatePopupButtonControl),

@@ -491,6 +491,18 @@ static void sh_DetachResource(PPC *c)
 	}
 	res_err = 0;
 }
+static void sh_HomeResFile(PPC *c)
+{
+	// HomeResFile(Handle): the reference number of the file a resource handle came from, -1 if it is not one
+	Res *r = hm_get(&by_handle, A(0));
+	if (!r || !r->file) {
+		res_err = -192;   // resNotFound
+		RET(-1);
+		return;
+	}
+	res_err = 0;
+	RET(r->file->ref);
+}
 static void sh_GetResInfo(PPC *c)
 {
 	Res *r = hm_get(&by_handle, A(0));
@@ -694,7 +706,7 @@ static void sh_GetIntlResource(PPC *c) { RET(res_get(A(0) == 0 ? 'itl0' : A(0) =
 static const ShimDef resshims[] = {
 	S(CurResFile), S(UseResFile), S(ResError), S(SetResLoad), S(LMGetResLoad), S(GetResource), S(Get1Resource),
 	S(GetNamedResource), S(Get1NamedResource), S(CountResources), S(GetIndResource), S(Count1Resources), S(Get1IndResource), S(ReleaseResource),
-	S(DetachResource), S(GetResInfo), S(SetResInfo), S(GetResAttrs), S(SetResAttrs), S(AddResource),
+	S(DetachResource), S(HomeResFile), S(GetResInfo), S(SetResInfo), S(GetResAttrs), S(SetResAttrs), S(AddResource),
 	S(ChangedResource), S(RemoveResource), S(WriteResource), S(UpdateResFile), S(CloseResFile), S(FSpOpenResFile),
 	S(HOpenResFile), S(FSOpenResourceFile), S(FSpCreateResFile), S(HCreateResFile), S(GetString), S(GetIndString), S(GetPicture),
 	S(GetCursor), S(GetIntlResource),

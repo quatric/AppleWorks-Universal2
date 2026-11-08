@@ -52,6 +52,13 @@ static void sh_PMSessionPageSetupDialog(PPC *c)
 {
 	// (session, pageFormat, Boolean *accepted)
 	PageFormat *f = PF(A(1));
+	if (getenv("PPC_SCRIPT")) {   // no native panel in scripted runs: accept the page format as it is
+		ppc_log("print: page setup accepted (scripted run)");
+		if (A(2))
+			ST8(A(2), 1);
+		RET(0);
+		return;
+	}
 	NSPrintInfo *pi = [[NSPrintInfo sharedPrintInfo] copy];
 	pi.orientation = f && f->landscape ? NSPaperOrientationLandscape : NSPaperOrientationPortrait;
 	win_flush_all();
@@ -74,6 +81,19 @@ static void sh_PMPageSetupDialog(PPC *c)
 }
 // the print panel comes at the end, with the pages to preview
 static void sh_PMSessionPrintDialog(PPC *c) { if (A(3)) ST8(A(3), 1); RET(0); }
+static void sh_PMGetPageRange(PPC *c)   // (settings, UInt32 *minPage, UInt32 *maxPage)
+{
+	if (A(1))
+		ST32(A(1), 1);
+	if (A(2))
+		ST32(A(2), 0x7fffffff);
+	RET(0);
+}
+static void sh_PMSetPageRange(PPC *c) { (void)c; RET(0); }   // (settings, minPage, maxPage): the range is not limited
+static void sh_PMSetResolution(PPC *c) { (void)c; RET(0); }  // (pageFormat, const PMResolution *): pages draw at their own resolution
+// the customizable print dialog: Init makes the dialog, Main runs it; the real panel comes at the end, with the pages
+static void sh_PMSessionPrintDialogInit(PPC *c) { if (A(3)) ST32(A(3), A(1)); RET(0); }   // (session, settings, format, PMPrintDialog *)
+static void sh_PMSessionPrintDialogMain(PPC *c) { if (A(3)) ST8(A(3), 1); RET(0); }        // (session, settings, format, Boolean *accepted, initUPP)
 static void sh_PMPrintDialog(PPC *c) { if (A(2)) ST8(A(2), 1); RET(0); }
 
 static void begin_document(Session *s)
@@ -130,7 +150,11 @@ static void end_document(Session *s)
 	CGPDFContextClose(s->cg);
 	CGContextRelease(s->cg);
 	s->cg = NULL;
-	if (s->pages) {
+	if (s->pages && getenv("PPC_SCRIPT")) {   // no native print panel in scripted runs: PPC_PRINT_PDF gets the pages
+		ppc_log("print: %d page(s) (scripted run)", s->pages);
+		if (getenv("PPC_PRINT_PDF"))
+			[(NSData *)s->pdf writeToFile:@(getenv("PPC_PRINT_PDF")) atomically:YES];
+	} else if (s->pages) {
 		PDFDocument *doc = [[PDFDocument alloc] initWithData:(NSData *)s->pdf];
 		NSPrintInfo *pi = [[NSPrintInfo sharedPrintInfo] copy];
 		pi.orientation = cur_pf && cur_pf->landscape ? NSPaperOrientationLandscape : NSPaperOrientationPortrait;
@@ -300,7 +324,7 @@ static const ShimDef printshims[] = {
 	{"PMSetJobNameCFString", sh_PMok}, {"PMDefaultPageFormat", sh_PMok}, {"PMDefaultPrintSettings", sh_PMok},
 	{"PMValidatePageFormat", sh_PMValidateOld}, {"PMValidatePrintSettings", sh_PMValidateOld},
 	{"PMBegin", sh_PMok}, {"PMEnd", sh_PMok}, {"PMDisposePageFormat", sh_PMok}, {"PMDisposePrintSettings", sh_PMok},
-	S(PMSessionPageSetupDialog), S(PMPageSetupDialog), S(PMSessionPrintDialog), S(PMPrintDialog),
+	S(PMSessionPageSetupDialog), S(PMPageSetupDialog), S(PMSessionPrintDialog), S(PMPrintDialog), S(PMGetPageRange), S(PMSetPageRange), S(PMSetResolution), S(PMSessionPrintDialogInit), S(PMSessionPrintDialogMain),
 	S(PMSessionBeginDocument), S(PMSessionEndDocument), S(PMSessionBeginPage), S(PMSessionEndPage),
 	S(PMSessionGetGraphicsContext), S(PMSessionError), S(PMNewPageFormat), S(PMNewPrintSettings),
 	S(PMBeginDocument), S(PMEndDocument), S(PMBeginPage), S(PMEndPage), S(PMGetGrafPtr), S(PMError),

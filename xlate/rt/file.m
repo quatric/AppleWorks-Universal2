@@ -1330,10 +1330,12 @@ static void sh_FlushVol(PPC *c) { RET(0); }
 
 NSString *fs_folder_path(uint32_t type)
 {
-	NSString *home = NSHomeDirectory(), *p;
+	// a test run (PPC_HOME) keeps preferences, documents and temporary files in a home of its own
+	const char *th = getenv("PPC_HOME");
+	NSString *home = th ? @(th) : NSHomeDirectory(), *p;
 	switch (type) {
 	case 'pref': p = [home stringByAppendingPathComponent:@"Library/Preferences"]; break;
-	case 'temp': case 'tmp ': p = NSTemporaryDirectory(); break;
+	case 'temp': case 'tmp ': p = th ? [home stringByAppendingPathComponent:@"tmp"] : NSTemporaryDirectory(); break;
 	case 'desk': p = [home stringByAppendingPathComponent:@"Desktop"]; break;
 	case 'docs': p = [home stringByAppendingPathComponent:@"Documents"]; break;
 	case 'asup': p = [home stringByAppendingPathComponent:@"Library/Application Support"]; break;

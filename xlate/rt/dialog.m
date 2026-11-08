@@ -312,8 +312,20 @@ static uint32_t create(QRect r, const uint8_t *title, int visible, int procID, u
 			d->def = i;
 	if (item(d, 2) && (item(d, 2)->type & 0x7f) == ctrlItem + btnCtrl)
 		d->cancel = 2;
+	else {
+		// Aqua dialogs give Escape and Command-period to the button called Cancel, wherever it is
+		uint32_t tb = gcalloc(256);
+		for (int i = 1; i <= d->n && !d->cancel; i++) {
+			if ((d->items[i - 1].type & 0x7f) != ctrlItem + btnCtrl || !d->items[i - 1].h)
+				continue;
+			SHIM_CALL("GetControlTitle", d->items[i - 1].h, tb);
+			if (LD8(tb) == 6 && !memcmp(G(tb + 1), "Cancel", 6))
+				d->cancel = i;
+		}
+		gfree(tb);
+	}
 	if (ppc_verbose >= 2)
-		ppc_log("dialog %08x: %d items", w, d->n);
+		ppc_log("dialog %08x: %d items, default %d, cancel %d", w, d->n, d->def, d->cancel);
 	if (visible)
 		SHIM_CALL("ShowWindow", w);
 	return w;

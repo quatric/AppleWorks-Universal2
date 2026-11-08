@@ -44,6 +44,10 @@ static NSString *expand(const uint8_t *s, int n)
 
 static NSInteger run_alert(NSAlert *a)
 {
+	if (getenv("PPC_SCRIPT")) {   // a scripted run has nobody to answer a native alert (and must not put one on the user's screen)
+		ppc_log("alert: %s | %s", a.messageText.UTF8String, a.informativeText.UTF8String);
+		return NSAlertFirstButtonReturn;
+	}
 	win_flush_all();
 	NSInteger r = [a runModal];
 	ev_drop_mouseups();

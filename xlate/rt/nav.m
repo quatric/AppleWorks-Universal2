@@ -122,6 +122,10 @@ static int run_ask(NavD *d, int discard)
 		dont.keyEquivalent = @"d";
 		dont.keyEquivalentModifierMask = NSEventModifierFlagCommand;
 	}
+	if (getenv("PPC_SCRIPT")) {   // no native alerts in scripted runs: answer Cancel
+		ppc_log("nav: %s: cancelled (scripted run)", a.messageText.UTF8String);
+		return 1;
+	}
 	win_flush_all();
 	NSInteger r = [a runModal] - NSAlertFirstButtonReturn;
 	ev_drop_mouseups();
@@ -142,6 +146,10 @@ static void run(NavD *d)
 		d->name = p.lastPathComponent;
 		d->action = d->kind == 0 ? actOpen : actSaveAs;
 		ppc_log("nav: answered with %s", auto_file);
+		return;
+	}
+	if (getenv("PPC_SCRIPT") && d->kind != 2) {   // no native panels in scripted runs: cancel
+		ppc_log("nav: %s panel cancelled (scripted run; PPC_NAV_FILE answers it)", d->kind == 0 ? "open" : "save");
 		return;
 	}
 	if (d->kind == 0) {

@@ -45,18 +45,27 @@ static void virtual_display(void)
 	d.sizeInMillimeters = CGSizeMake(423, 264);
 	d.vendorID = 0x4141;
 	d.productID = 0x5757;
-	d.serialNum = 1;
+	d.serialNum = (unsigned int)getpid();   // each launch is its own display, whatever the last one is still tearing down
 	CGVirtualDisplay *v = [[cv alloc] initWithDescriptor:d];
 	CGVirtualDisplaySettings *s = [cs new];
 	s.hiDPI = 0;
-	s.modes = @[ [[cm alloc] initWithWidth:1600 height:1000 refreshRate:60] ];
+	s.modes = @[ [[cm alloc] initWithWidth:1280 height:800 refreshRate:60] ];
 	if (!v || ![v applySettings:s]) {
 		fprintf(stderr, "could not make a virtual display: windows open on the main display\n");
 		return;
 	}
 	CGDirectDisplayID id = v.displayID;
-	for (int i = 0; i < 200; i++) {   // it is active, in its mode, shortly
-		if (CGDisplayIsActive(id) && CGDisplayBounds(id).size.width == 1600 && CGDisplayBounds(id).size.height == 1000) {
+	// the system settles the display's mode and place after a moment: use it once its bounds hold still
+	CGRect last = CGRectZero;
+	int steady = 0;
+	for (int i = 0; i < 300; i++) {
+		CGRect cur = CGDisplayBounds(id);
+		if (CGDisplayIsActive(id) && cur.size.width >= 1024 && CGRectEqualToRect(cur, last))
+			steady++;
+		else
+			steady = 0;
+		last = cur;
+		if (steady >= 20) {   // a full second
 			qd_use_display(id);
 			objc_setAssociatedObject(NSApp, "vdisplay", v, OBJC_ASSOCIATION_RETAIN);   // it lives as long as the app
 			return;
