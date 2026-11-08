@@ -558,6 +558,15 @@ static void sh_LActivate(PPC *c)
 	lsync(l);
 	draw_all(l);
 }
+static void sh_LRect(PPC *c)
+{
+	// LRect(Rect *cellRect, LCell, list)
+	List *l = L(A(2));
+	if (!l)
+		return;
+	QPoint cp = PT(A(1));
+	PUTRECT(A(0), cell_rect(l, cp.v, cp.h));
+}
 static void sh_LSetSelect(PPC *c)
 {
 	// LSetSelect(setIt, LCell, list)
@@ -732,8 +741,8 @@ static void sh_GetListDataBounds(PPC *c) { List *l = L(A(0)); if (l) PUTRECT(A(1
 static void sh_GetListVisibleCells(PPC *c) { List *l = L(A(0)); if (l) { lsync(l); PUTRECT(A(1), RECT(HP(l->h) + 20)); } RET(A(1)); }
 static void sh_GetListCellSize(PPC *c) { List *l = L(A(0)); if (l) STPT(A(1), l->csize); RET(A(1)); }
 static void sh_SetListRefCon(PPC *c) { List *l = L(A(0)); if (l) ST32(HP(l->h) + 60, A(1)); }
-static void sh_SetListUserHandle(PPC *c) { List *l = L(A(0)); if (l) ST32(HP(l->h) + 64, A(1)); }
-static void sh_GetListUserHandle(PPC *c) { List *l = L(A(0)); RET(l ? LD32(HP(l->h) + 64) : 0); }
+static void sh_SetListUserHandle(PPC *c) { List *l = L(A(0)); if (l) ST32(HP(l->h) + 68, A(1)); }
+static void sh_GetListUserHandle(PPC *c) { List *l = L(A(0)); RET(l ? LD32(HP(l->h) + 68) : 0); }
 static void sh_GetListRefCon(PPC *c) { List *l = L(A(0)); RET(l ? LD32(HP(l->h) + 60) : 0); }
 static void sh_GetListActive(PPC *c) { List *l = L(A(0)); RET(l && l->active); }
 
@@ -751,7 +760,7 @@ static void sh_LClickWrapper(PPC *c)
 static const ShimDef listshims[] = {
 	S(CreateCustomList), S(GetListPort),
 	S(LNew), S(LDispose), S(LAddRow), S(LAddColumn), S(LDelRow), S(LSetCell), S(LAddToCell), S(LGetCell),
-	S(LCellSize), S(LSize), S(LScroll), S(LAutoScroll), S(LSetDrawingMode), S(LUpdate), S(LDraw), S(LActivate), S(LSetSelect),
+	S(LCellSize), S(LRect), S(LSize), S(LScroll), S(LAutoScroll), S(LSetDrawingMode), S(LUpdate), S(LDraw), S(LActivate), S(LSetSelect),
 	S(LGetSelect), S(LNextCell), S(LLastClick), {"LClick", sh_LClickWrapper}, S(GetListViewBounds),
 	S(GetListVerticalScrollBar), S(GetListHorizontalScrollBar), S(SetListSelectionFlags), S(GetListSelectionFlags),
 	S(GetListDataBounds), S(GetListVisibleCells), S(GetListCellSize), S(SetListRefCon), S(GetListRefCon), S(SetListUserHandle), S(GetListUserHandle),

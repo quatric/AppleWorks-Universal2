@@ -1325,6 +1325,14 @@ static int16_t map1(int v, int s0, int s1, int d0, int d1)
 {
 	return s1 == s0 ? (int16_t)d0 : (int16_t)(d0 + (int)((int64_t)(v - s0) * (d1 - d0) / (s1 - s0)));
 }
+static void sh_MapPt(PPC *c)
+{
+	// MapPt(Point *, const Rect *src, const Rect *dst)
+	uint32_t p = A(0);
+	QRect s = RECT(A(1)), d = RECT(A(2));
+	ST16(p, (uint16_t)map1((int16_t)LD16(p), s.top, s.bottom, d.top, d.bottom));
+	ST16(p + 2, (uint16_t)map1((int16_t)LD16(p + 2), s.left, s.right, d.left, d.right));
+}
 static void sh_MapRect(PPC *c)
 {
 	QRect r = RECT(A(0)), s = RECT(A(1)), d = RECT(A(2));
@@ -1975,7 +1983,7 @@ static const ShimDef qdshims[] = {
 	S(PaintOval), S(FrameRoundRect), S(FrameArc), S(PaintArc), S(FillArc), S(OpenPoly), S(ClosePoly), S(KillPoly),
 	S(FramePoly), S(PaintPoly), S(FillPoly), S(FrameRgn), S(PaintRgn), S(EraseRgn), S(InvertRgn), S(FillRgn),
 	S(ScrollRect), S(SetRect), S(OffsetRect), S(InsetRect), S(SectRect), S(UnionRect), S(EqualRect), S(EmptyRect),
-	S(PtInRect), S(PinRect), S(EqualPt), S(MapRect), S(NewRgn), S(DisposeRgn), S(CopyRgn), S(SetEmptyRgn),
+	S(PtInRect), S(PinRect), S(EqualPt), S(MapPt), S(MapRect), S(NewRgn), S(DisposeRgn), S(CopyRgn), S(SetEmptyRgn),
 	S(SetRectRgn), S(RectRgn), S(OffsetRgn), S(InsetRgn), S(SectRgn), S(UnionRgn), S(XorRgn), S(DiffRgn), S(EmptyRgn),
 	S(PtInRgn), S(RectInRgn), S(GetRegionBounds), S(BitMapToRegion), S(OpenRgn), S(CloseRgn), S(TextFont),
 	S(TextFace), S(TextMode), S(TextSize), S(DrawString), S(DrawText), S(StdText), S(StdTxMeas), S(StringWidth),

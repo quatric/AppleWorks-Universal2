@@ -106,6 +106,11 @@ static int alert(int16_t id, int kind)
 	}
 	if (!no)
 		[a addButtonWithTitle:@"OK"];
+	if (getenv("PPC_SCRIPT")) {   // a scripted run cannot answer a modal alert: log it and take the default button
+		ppc_log("alert: %s | %s", a.messageText.UTF8String, a.informativeText.UTF8String);
+		[a release];
+		return no ? buttons[order[0]] : 1;
+	}
 	NSInteger r = run_alert(a) - NSAlertFirstButtonReturn;
 	if (!no)
 		return 1;

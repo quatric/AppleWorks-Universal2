@@ -368,6 +368,95 @@ static void sh_SecondsToDate(PPC *c)
 	ST16(d + 12, g.tm_wday + 1);
 }
 
+// date and time strings: Mac seconds count as local time (see mac_now), so they are formatted as GMT
+static NSString *fmt_secs(uint32_t secs, int date_form, int time_form)
+{
+	NSDateFormatter *f = [[NSDateFormatter new] autorelease];
+	f.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:0];
+	f.locale = NSLocale.currentLocale;
+	if (date_form >= 0)
+		f.dateStyle = date_form == 0 ? NSDateFormatterShortStyle : date_form == 1 ? NSDateFormatterFullStyle : NSDateFormatterMediumStyle;
+	if (time_form >= 0) {
+		f.timeStyle = time_form ? NSDateFormatterMediumStyle : NSDateFormatterShortStyle;
+	}
+	return [f stringFromDate:[NSDate dateWithTimeIntervalSince1970:(double)secs - 2082844800.0]];
+}
+static void sh_DateString(PPC *c) { ns_pstr(fmt_secs(A(0), (int)A(1) & 3, -1), A(2)); }          // (secs, form, Str255, itl)
+static void sh_TimeString(PPC *c) { ns_pstr(fmt_secs(A(0), -1, A(1) & 0xff), A(2)); }             // (secs, wantSeconds, Str255, itl)
+static void sh_LongDateString(PPC *c) { ns_pstr(fmt_secs(LD32(A(0) + 4), (int)A(1) & 3, -1), A(2)); }
+static void sh_LongTimeString(PPC *c) { ns_pstr(fmt_secs(LD32(A(0) + 4), -1, A(1) & 0xff), A(2)); }
+static void sh_LongDateToSeconds(PPC *c)
+{
+	// (const LongDateRec *, LongDateTime *): era year month day hour minute second ...
+	uint32_t d = A(0);
+	struct tm g = {0};
+	g.tm_year = (int16_t)LD16(d + 2) - 1900;
+	g.tm_mon = (int16_t)LD16(d + 4) - 1;
+	g.tm_mday = (int16_t)LD16(d + 6);
+	g.tm_hour = (int16_t)LD16(d + 8);
+	g.tm_min = (int16_t)LD16(d + 10);
+	g.tm_sec = (int16_t)LD16(d + 12);
+	time_t t = timegm(&g);
+	ST32(A(1), 0);
+	ST32(A(1) + 4, (uint32_t)(t + 2082844800u));
+}
+// StringToDate / StringToTime (text, length, cache, long *lengthUsed, LongDateRec *): found by data detection
+static void string_to_dt(PPC *c, int want_time)
+{
+	NSString *t = mac_ns(G(A(0)), (int)A(1));
+	NSDataDetector *dd = [NSDataDetector dataDetectorWithTypes:NSTextCheckingTypeDate error:nil];
+	NSTextCheckingResult *m = [dd firstMatchInString:t options:0 range:NSMakeRange(0, t.length)];
+	if (!m || !m.date) {
+		if (A(3))
+			ST32(A(3), 0);
+		RET(0x8000);   // fatalDateTime
+		return;
+	}
+	NSCalendar *cal = [NSCalendar calendarWithIdentifier:NSCalendarIdentifierGregorian];
+	cal.timeZone = m.timeZone ?: [NSTimeZone localTimeZone];
+	NSDateComponents *k = [cal components:NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay | NSCalendarUnitHour | NSCalendarUnitMinute | NSCalendarUnitSecond fromDate:m.date];
+	uint32_t d = A(4);
+	if (d && !want_time) {
+		ST16(d, 1);
+		ST16(d + 2, (uint16_t)k.year);
+		ST16(d + 4, (uint16_t)k.month);
+		ST16(d + 6, (uint16_t)k.day);
+	} else if (d) {
+		ST16(d + 8, (uint16_t)k.hour);
+		ST16(d + 10, (uint16_t)k.minute);
+		ST16(d + 12, (uint16_t)k.second);
+	}
+	if (A(3))
+		ST32(A(3), A(1));
+	RET(0);
+}
+static void sh_StringToDate(PPC *c) { string_to_dt(c, 0); }
+static void sh_StringToTime(PPC *c) { string_to_dt(c, 1); }
+// CharacterType(text, offset, script): single byte; class Ascii for letters and digits, Punct otherwise
+static void sh_CharacterType(PPC *c)
+{
+	uint8_t ch = LD8(A(0) + (int16_t)A(1));
+	RET(ch >= 0x80 ? 8 << 8 : isalnum(ch) ? 1 << 8 : 0);
+}
+// scripts: everything is Roman text
+static void sh_FindScriptRun(PPC *c) { if (A(2) > 0x10000) ST32(A(2), A(1)); RET(0); }
+static void sh_FindWordBreaks(PPC *c)
+{
+	// (text, length, offset, leadingEdge, breaks, OffsetTable offsets, script)
+	const uint8_t *tx = G(A(0));
+	int n = (int16_t)A(1), o = (int16_t)A(2), a = o, b = o;
+	while (a > 0 && isalnum(tx[a - 1]))
+		a--;
+	while (b < n && isalnum(tx[b]))
+		b++;
+	if (a == b && b < n)
+		b++;
+	if (A(5)) {
+		ST16(A(5), (uint16_t)a);
+		ST16(A(5) + 2, (uint16_t)b);
+	}
+}
+
 // ---- processes ------------------------------------------------------------------------------------
 
 static void sh_GetCurrentProcess(PPC *c) { ST32(A(0), 0); ST32(A(0) + 4, 2); RET(0); }
@@ -588,7 +677,7 @@ static const ShimDef miscshims[] = {
 	S(UpperString), S(UppercaseText), S(CopyCStringToPascal), S(CopyPascalStringToC), S(StyledLineBreak),
 	S(VisibleLength), S(Long2Fix), S(BitTst), S(Random), S(sin), S(cos), S(sqrt), S(floor), S(ceil), S(log10),
 	S(pow), S(nan), S(x80tod), S(num2dec), S(dec2num), S(dec2str), S(StringToFormatRec), S(StringToExtended),
-	S(GetDateTime), S(SecondsToDate), S(GetCurrentProcess), S(GetNextProcess), S(GetProcessInformation),
+	S(GetDateTime), S(SecondsToDate), S(DateString), S(TimeString), S(LongDateString), S(LongTimeString), S(LongDateToSeconds), S(StringToDate), S(StringToTime), S(FindScriptRun), S(CharacterType), S(FindWordBreaks), S(GetCurrentProcess), S(GetNextProcess), S(GetProcessInformation),
 	S(SetFrontProcess), S(LaunchApplication), S(LSInit), S(LSTerm), S(LSOpenFromRefSpec), S(ExitToShell),
 	S(__CFStringMakeConstantString), S(CFStringCreateWithCString), S(CFStringCreateWithPascalString),
 	S(CFStringCreateWithBytes), S(CFStringGetLength), S(CFStringGetCharacters), S(CFGetTypeID), S(CFStringGetTypeID),
