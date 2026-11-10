@@ -10,3 +10,4 @@ __pycache__/
 # Local tooling
 .codesight/
 dl/
+dist/

@@ -12,6 +12,7 @@
 // threadNotFoundErr; thread IDs kNoThreadID 0, kCurrentThreadID 1,
 // kApplicationThreadID 2: from the Carbon headers)
 
+#if defined(__aarch64__)
 // arm64: x19-x28, fp, lr, sp, d8-d15
 typedef struct { uint64_t x[13]; double d[8]; } HostCtx;
 
@@ -27,6 +28,27 @@ __asm__(
 	"ldr x9, [x1, #96]\n mov sp, x9\n"
 	"ldp d8, d9, [x1, #104]\n ldp d10, d11, [x1, #120]\n ldp d12, d13, [x1, #136]\n ldp d14, d15, [x1, #152]\n"
 	"ret\n");
+#define CTX_ENTRY_ADJ 0
+#elif defined(__x86_64__)
+// x86_64: rbx, r12-r15 in x[0..4], rbp x[10], resume address x[11], rsp x[12]
+typedef struct { uint64_t x[13]; double d[8]; } HostCtx;
+
+void thread_swap(HostCtx *from, HostCtx *to);
+__asm__(
+	".text\n.p2align 4\n.globl _thread_swap\n_thread_swap:\n"
+	"movq %rbx, 0(%rdi)\n movq %r12, 8(%rdi)\n movq %r13, 16(%rdi)\n movq %r14, 24(%rdi)\n movq %r15, 32(%rdi)\n"
+	"movq %rbp, 80(%rdi)\n"
+	"movq (%rsp), %rax\n movq %rax, 88(%rdi)\n"
+	"leaq 8(%rsp), %rax\n movq %rax, 96(%rdi)\n"
+	"movq 0(%rsi), %rbx\n movq 8(%rsi), %r12\n movq 16(%rsi), %r13\n movq 24(%rsi), %r14\n movq 32(%rsi), %r15\n"
+	"movq 80(%rsi), %rbp\n"
+	"movq 96(%rsi), %rsp\n"
+	"jmp *88(%rsi)\n");
+// a first switch jumps (no call pushed a return address): enter as if called
+#define CTX_ENTRY_ADJ 8
+#else
+#error unsupported host architecture
+#endif
 
 typedef struct Thread {
 	uint32_t id;
@@ -170,7 +192,7 @@ static void sh_NewThread(PPC *c)
 	uint64_t sp = ((uint64_t)t->host_stack + t->host_size - 64) & ~15ull;
 	t->ctx.x[11] = (uint64_t)thread_main;   // lr: where the first switch "returns" to
 	t->ctx.x[10] = 0;                        // fp
-	t->ctx.x[12] = sp;
+	t->ctx.x[12] = sp - CTX_ENTRY_ADJ;
 	t->next = NULL;
 	Thread **p = &threads;
 	while (*p)
