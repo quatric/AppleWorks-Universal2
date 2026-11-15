@@ -155,6 +155,8 @@ uint32_t res_get(uint32_t type, int16_t id, int one)
 	Res *r = search(type, id, one);
 	if (!r) {
 		res_err = -192;   // resNotFound
+		if (getenv("PPC_DBG_RES"))
+			ppc_log("resource miss: '%c%c%c%c' %d", type >> 24, (type >> 16) & 255, (type >> 8) & 255, type & 255, id);
 		return 0;
 	}
 	res_err = 0;

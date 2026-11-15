@@ -50,6 +50,14 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$OUT/$EXE.universal" "$APP/Contents/MacOS/$EXE"
 cp "$SRC/..namedfork/rsrc" "$APP/Contents/Resources/Application.rsrc"
 cp "game/$NAME/$NAME.app/Contents/Resources/"*.icns "$APP/Contents/Resources/"
+cp -R "game/$NAME/$NAME.app/Contents/Resources/AppleWorks Help" "$APP/Contents/Resources/"
+# the original's Contents/MacOS holds relative aliases to the folders beside the
+# bundle; the translated app looks beside Application.rsrc, so the same links go
+# there (resolved in the installed "AppleWorks 6" folder, and in build/ for test runs)
+for d in "AppleWorks Essentials" Clippings "Starting Points"; do
+	ln -s "../../../$d" "$APP/Contents/Resources/$d"
+	rm -f "build/$d"; ln -s "../game/$NAME/$d" "build/$d"
+done
 $PY -I xlate/mkinfo.py "$SRC" "$EXE" "AppleWorks" "$APP"
 /usr/bin/xattr -cr "$APP"; codesign --force --deep -s - "$APP"
 echo "$APP"

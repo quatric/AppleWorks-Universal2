@@ -2,6 +2,8 @@
 #import <Foundation/Foundation.h>
 #import <ImageIO/ImageIO.h>
 #include "pict.h"
+#include <sys/stat.h>
+#include <unistd.h>
 
 typedef struct {
 	const uint8_t *d;
@@ -837,5 +839,82 @@ static void sh_DrawPicture(PPC *c)
 // (PostScript, grouping and the like) change nothing
 static void sh_PicComment(PPC *c) { (void)c; }
 
-static const ShimDef pictshims[] = {S(OpenPicture), S(ClosePicture), S(KillPicture), S(DrawPicture), S(PicComment)};
+// ---- picture files (QuickTime's Image Compression Manager) ----------------------------------
+// A PICT file is 512 bytes the application may use, then the picture as a 'PICT' resource holds it.
+extern int fs_fork_fd(int16_t ref);
+
+static NSData *pict_file(int16_t ref)
+{
+	int fd = fs_fork_fd(ref);
+	struct stat st;
+	if (fd < 0 || fstat(fd, &st) || st.st_size < 12)
+		return nil;
+	NSMutableData *d = [NSMutableData dataWithLength:(NSUInteger)st.st_size];
+	if (pread(fd, d.mutableBytes, d.length, 0) != (ssize_t)d.length)
+		return nil;
+	const uint8_t *b = d.bytes;
+	// the version opcode follows the size word and the frame: 0x1101 (v1) or 0x0011 (v2)
+	if (d.length > 524 && ((b[522] == 0x11 && b[523] == 0x01) || (b[522] == 0 && b[523] == 0x11)))
+		return [d subdataWithRange:NSMakeRange(512, d.length - 512)];
+	return d;
+}
+
+// GetPictureFileHeader(refNum, Rect *frame, OpenCPicParams *header)
+static void sh_GetPictureFileHeader(PPC *c)
+{
+	NSData *d = pict_file((int16_t)A(0));
+	if (!d) {
+		RET(-50);
+		return;
+	}
+	const uint8_t *b = d.bytes;
+	QRect f = {(int16_t)(b[2] << 8 | b[3]), (int16_t)(b[4] << 8 | b[5]), (int16_t)(b[6] << 8 | b[7]), (int16_t)(b[8] << 8 | b[9])};
+	if (A(1))
+		PUTRECT(A(1), f);
+	if (A(2)) {
+		uint32_t h = A(2);
+		int v2 = b[10] == 0 && b[11] == 0x11;
+		PUTRECT(h, f);
+		ST32(h + 8, 72 << 16);
+		ST32(h + 12, 72 << 16);
+		// a version 2 extended header (0x0C00, version -2) gives the source rectangle and resolution
+		if (v2 && d.length >= 40 && b[14] == 0x0c && b[15] == 0 && b[16] == 0xff && b[17] == 0xfe) {
+			ST32(h + 8, (uint32_t)(b[20] << 24 | b[21] << 16 | b[22] << 8 | b[23]));
+			ST32(h + 12, (uint32_t)(b[24] << 24 | b[25] << 16 | b[26] << 8 | b[27]));
+			QRect s = {(int16_t)(b[28] << 8 | b[29]), (int16_t)(b[30] << 8 | b[31]), (int16_t)(b[32] << 8 | b[33]), (int16_t)(b[34] << 8 | b[35])};
+			PUTRECT(h, s);
+		}
+		ST16(h + 16, v2 ? 2 : 1);
+		ST16(h + 18, 0);
+		ST32(h + 20, 0);
+	}
+	RET(0);
+}
+
+static void draw_pict_file(PPC *c, int16_t ref, uint32_t frame)
+{
+	NSData *d = pict_file(ref);
+	if (!d) {
+		RET(-50);
+		return;
+	}
+	if (getenv("PPC_DBG_COPY")) {
+		QRect r = RECT(frame);
+		ppc_log("DrawPictureFile %d (%lu bytes) -> port %08x dst %d,%d,%d,%d", ref, (unsigned long)d.length, qd_port ? qd_port->tok : 0, r.top, r.left, r.bottom, r.right);
+		if (qd_port)
+			ppc_log("  clip %d,%d,%d,%d vis %d,%d,%d,%d", qd_port->clip->bbox.top, qd_port->clip->bbox.left, qd_port->clip->bbox.bottom, qd_port->clip->bbox.right,
+				qd_port->vis->bbox.top, qd_port->vis->bbox.left, qd_port->vis->bbox.bottom, qd_port->vis->bbox.right);
+	}
+	if (qd_port)
+		pict_draw(qd_port, d.bytes, (uint32_t)d.length, RECT(frame));
+	RET(0);
+}
+// DrawPictureFile(refNum, const Rect *frame, progress)
+static void sh_DrawPictureFile(PPC *c) { draw_pict_file(c, (int16_t)A(0), A(1)); }
+// DrawTrimmedPictureFile(refNum, const Rect *frame, RgnHandle trimMask, flags, progress): the port's
+// clip already limits what is drawn
+static void sh_DrawTrimmedPictureFile(PPC *c) { draw_pict_file(c, (int16_t)A(0), A(1)); }
+
+static const ShimDef pictshims[] = {S(OpenPicture), S(ClosePicture), S(KillPicture), S(DrawPicture), S(PicComment),
+	S(GetPictureFileHeader), S(DrawPictureFile), S(DrawTrimmedPictureFile)};
 REGISTER(pictshims)

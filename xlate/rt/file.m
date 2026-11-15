@@ -68,8 +68,11 @@ static NSString *resolve(int16_t vref, int32_t dir, const uint8_t *name, size_t 
 		base = @(default_dir);
 	if (!base)
 		return nil;
-	if (!n)
+	if (!n) {
+		if (getenv("PPC_DBG_CAT"))
+			ppc_log("fs: resolve %d/%d -> %s", vref, dir, base.fileSystemRepresentation);
 		return base;
+	}
 	// a full path: "Volume:dir:file" (no leading colon, contains a colon)
 	size_t i = 0;
 	if (name[0] != ':' && memchr(name, ':', n)) {
@@ -94,6 +97,9 @@ static NSString *resolve(int16_t vref, int32_t dir, const uint8_t *name, size_t 
 			p = [p stringByAppendingPathComponent:host_name(name + i, j - i)];
 		i = j + 1;
 	}
+	if (getenv("PPC_DBG_CAT"))
+		ppc_log("fs: resolve %d/%d '%s' -> %s%s", vref, dir, n ? host_name(name, n).UTF8String : "", p.fileSystemRepresentation,
+			[NSFileManager.defaultManager fileExistsAtPath:p] ? "" : " (missing)");
 	return p;
 }
 
@@ -328,6 +334,7 @@ static int fork_fd(int16_t ref)
 		return -1;
 	return forks[i].fd - 1;
 }
+int fs_fork_fd(int16_t ref) { return fork_fd(ref); }
 
 static void sh_FSpOpenDF(PPC *c)
 {
@@ -1298,6 +1305,12 @@ static void sh_PBSetCatInfoSync(PPC *c)
 static void sh_PBHGetVInfoSync(PPC *c)
 {
 	uint32_t pb = A(0);
+	// ioVolIndex > 0 asks for the n-th mounted volume: there is only the one
+	if ((int16_t)LD16(pb + 28) > 1) {
+		ST16(pb + 16, (uint16_t)-35);   // nsvErr
+		RET(-35);
+		return;
+	}
 	if (LD32(pb + 18))
 		c2p("Macintosh HD", LD32(pb + 18));
 	ST16(pb + 22, VREF);
@@ -1321,6 +1334,8 @@ static void sh_PBXGetVolInfoSync(PPC *c)
 {
 	uint32_t pb = A(0);   // (before the call below sets r3, the result)
 	sh_PBHGetVInfoSync(c);
+	if ((int16_t)LD16(pb + 16))
+		return;
 	ST64(pb + 122, 1ull << 40);   // ioVTotalBytes
 	ST64(pb + 130, 1ull << 39);   // ioVFreeBytes
 	RET(0);

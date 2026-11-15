@@ -648,6 +648,8 @@ static void sh_CFURLCreateWithFileSystemPath(PPC *c)
 	}
 	RET(cf_tok(CFBridgingRetain([NSURL fileURLWithPath:s])));
 }
+// GetDiskFragment: plug-in code (the translators' PowerPC libraries) is not translated, so none loads
+static void sh_GetDiskFragment(PPC *c) { RET(-2804); }   // cfragNoLibraryErr
 static void sh_CFBundleCreate(PPC *c) { RET(0); }
 static void sh_CFBundleLoadExecutable(PPC *c) { RET(0); }
 static void sh_CFBundleGetFunctionPointerForName(PPC *c) { RET(0); }
@@ -699,7 +701,7 @@ static const ShimDef miscshims[] = {
 	S(SetFrontProcess), S(LaunchApplication), S(LSInit), S(LSTerm), S(LSOpenFromRefSpec), S(ExitToShell),
 	S(__CFStringMakeConstantString), S(CFStringCreateWithCString), S(CFStringCreateWithPascalString),
 	S(CFStringCreateWithBytes), S(CFStringGetLength), S(CFStringGetCharacters), S(CFGetTypeID), S(CFStringGetTypeID),
-	S(CFRelease), S(CFURLCreateWithFileSystemPath), S(CFBundleCreate), S(CFBundleLoadExecutable),
+	S(CFRelease), S(CFURLCreateWithFileSystemPath), S(GetDiskFragment), S(CFBundleCreate), S(CFBundleLoadExecutable),
 	S(CFBundleGetFunctionPointerForName), S(GetSharedLibrary), S(FindSymbol), S(CloseConnection), S(AHGotoPage),
 	S(LMGetSysFontFam), S(LMGetSysFontSize), S(LMGetHiliteMode), S(LMSetHiliteMode), {"LMSetSysFontFam", sh_nop},
 	{"LMSetSysFontSize", sh_nop}, {"LMSetLastSPExtra", sh_nop}, {"SetA5", sh_zero}, {"SetCurrentA5", sh_zero},

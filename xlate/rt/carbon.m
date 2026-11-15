@@ -365,6 +365,12 @@ static void sh_CFStringAppendCString(PPC *c)
 	if (s && CFGetTypeID(s) == CFStringGetTypeID() && A(1))
 		CFStringAppendCString((CFMutableStringRef)s, (const char *)G(A(1)), (CFStringEncoding)A(2));
 }
+static void sh_CFBundleCopyBundleURL(PPC *c)
+{
+	CFTypeRef b = cf_obj(A(0));
+	CFURLRef u = b && CFGetTypeID(b) == CFBundleGetTypeID() ? CFBundleCopyBundleURL((CFBundleRef)b) : NULL;
+	RET(u ? cf_tok(u) : 0);
+}
 static void sh_CFBundleCopyResourcesDirectoryURL(PPC *c)
 {
 	CFTypeRef b = cf_obj(A(0));
@@ -708,7 +714,7 @@ static const ShimDef carbonshims[] = {
 	S(QDIsPortBuffered), S(CopyDeepMask), S(GetAvailableWindowPositioningBounds), S(ChangeWindowAttributes),
 	S(ReshapeCustomWindow), S(SetThemeWindowBackground), S(ShowHide), S(PaintOne), S(SetControlProperty),
 	S(NewCollection), S(FindNextComponent), S(ICStart), S(AEInstallCoercionHandler), S(InitDateCache),
-	S(LMGetApFontID), S(LMGetKbdType), S(LMGetCurApName), S(HideCursor), S(ShowCursor), S(GetCaretTime), S(CFStringCreateMutable), S(CFBundleGetMainBundle), S(GetFrontProcess),
+	S(LMGetApFontID), S(LMGetKbdType), S(LMGetCurApName), S(HideCursor), S(ShowCursor), S(GetCaretTime), S(CFStringCreateMutable), S(CFBundleGetMainBundle), S(CFBundleCopyBundleURL), S(GetFrontProcess),
 	S(SameProcess),
 };
 REGISTER(carbonshims)
