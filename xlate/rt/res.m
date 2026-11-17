@@ -700,6 +700,8 @@ static void sh_GetIndString(PPC *c)
 	for (int i = 1; i < idx; i++)
 		p += 1 + LD8(p);
 	memcpy(G(out), G(p), LD8(p) + 1);
+	if (getenv("PPC_DBG_STR"))
+		ppc_log("GetIndString %d/%d '%.*s' lr %08x", (int16_t)A(1), idx, LD8(p), (const char *)G(p + 1), c->lr);
 }
 static void sh_GetPicture(PPC *c) { RET(res_get('PICT', (int16_t)A(0), 0)); }
 static void sh_GetCursor(PPC *c) { RET(res_get('CURS', (int16_t)A(0), 0)); }

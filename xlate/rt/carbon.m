@@ -300,17 +300,21 @@ static void sh_GetAvailableWindowPositioningBounds(PPC *c)
 	RET(0);
 }
 static void sh_ChangeWindowAttributes(PPC *c) { RET(0); }
-static void sh_ReshapeCustomWindow(PPC *c) { RET(0); }
 static void sh_SetThemeWindowBackground(PPC *c) { RET(0); }
 static void sh_ShowHide(PPC *c) { SHIM_CALL((A(1) & 0xff) ? "ShowWindow" : "HideWindow", A(0)); }
-// PaintOne(window, clobberedRgn): the window repaints on its update event
+// PaintOne(window, clobberedRgn): the frame is drawn again where the region reaches past the content
+// (Starting Points repaints its tabs this way), and the content repaints on its update event
 static void sh_PaintOne(PPC *c)
 {
 	Win *w = WIN(A(0));
 	Rgn *g = RGN(A(1));
-	if (w && g)
-		// global coordinates, to the content's
-		win_invalidate(w, rect_off(g->bbox, w->port->portRect.left - w->frame.left, w->port->portRect.top - w->frame.top));
+	if (!w || !g)
+		return;
+	QRect b = g->bbox;   // global
+	if (b.top < w->frame.top || b.left < w->frame.left || b.bottom > w->frame.bottom || b.right > w->frame.right)
+		win_frame_redraw(w);
+	// global coordinates, to the content's
+	win_invalidate(w, rect_off(b, w->port->portRect.left - w->frame.left, w->port->portRect.top - w->frame.top));
 }
 
 // ---- controls, collections, Process Manager, Internet Config, and the rest
@@ -393,8 +397,22 @@ static void sh_GetThemeTextDimensions(PPC *c)
 		NSRect r = [str boundingRectWithSize:NSMakeSize((int16_t)LD16(A(4) + 2), 1e6)
 			options:NSStringDrawingUsesLineFragmentOrigin attributes:at];
 		sz = r.size;
-	} else
+	} else {
+		// one line: as the theme text calls draw and truncate it, so a label sized by this fits
+		extern int theme_text_metrics(int id, NSString *s, int *height, int *descent);
+		int h, d, w = theme_text_metrics((int16_t)A(1), str, &h, &d);
+		if (w >= 0) {
+			if (A(4)) {
+				ST16(A(4), (uint16_t)(int16_t)h);
+				ST16(A(4) + 2, (uint16_t)(int16_t)w);
+			}
+			if (A(5))
+				ST16(A(5), (uint16_t)(int16_t)-d);
+			RET(0);
+			return;
+		}
 		sz = [str sizeWithAttributes:at];
+	}
 	if (A(4)) {
 		ST16(A(4), (uint16_t)(int16_t)ceil(sz.height));
 		ST16(A(4) + 2, (uint16_t)(int16_t)ceil(sz.width));
@@ -712,7 +730,7 @@ static const ShimDef carbonshims[] = {
 	S(RmvTime), {"InsXTime", sh_InsTime}, S(GetMainEventLoop), S(AddEventTypesToHandler),
 	S(GetQDGlobalsScreenBits), S(GetCTable), S(DisposeCTable), S(IsRegionRectangular), S(QDRegionToRects),
 	S(QDIsPortBuffered), S(CopyDeepMask), S(GetAvailableWindowPositioningBounds), S(ChangeWindowAttributes),
-	S(ReshapeCustomWindow), S(SetThemeWindowBackground), S(ShowHide), S(PaintOne), S(SetControlProperty),
+	S(SetThemeWindowBackground), S(ShowHide), S(PaintOne), S(SetControlProperty),
 	S(NewCollection), S(FindNextComponent), S(ICStart), S(AEInstallCoercionHandler), S(InitDateCache),
 	S(LMGetApFontID), S(LMGetKbdType), S(LMGetCurApName), S(HideCursor), S(ShowCursor), S(GetCaretTime), S(CFStringCreateMutable), S(CFBundleGetMainBundle), S(CFBundleCopyBundleURL), S(GetFrontProcess),
 	S(SameProcess),

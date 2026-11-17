@@ -186,6 +186,26 @@ Port *PORT(uint32_t tok)
 	return p;
 }
 
+// CreateNewPort: a color port of its own, not a window's, which becomes the current port, as OpenCPort's
+// did; its rectangle is the screen. Starting Points moves and sizes one over the screen to track its
+// tabs. The pixels are a scratch tile (the visible region stays on it), so what is drawn there is dropped.
+static void sh_CreateNewPort(PPC *c)
+{
+	Port *p = port_new(0, 0, (QRect){0, 0, 16, 16}, 1);
+	p->portRect = qd_screen_rect();
+	port_tok_write(p);
+	qd_port = p;
+	RET(p->tok);
+}
+static void sh_DisposePort(PPC *c)
+{
+	Port *p = PORT(A(0));
+	if (!p)
+		return;
+	gfree(p->pix);
+	port_free(p);
+}
+
 // ---- clipping and painting ----------------------------------------------------------
 
 void qd_clip_region(Port *p, Rgn *out)
@@ -921,6 +941,29 @@ static void sh_SetOrigin(PPC *c)
 	int h = (int16_t)A(0), v = (int16_t)A(1);
 	int dh = h - p->portRect.left, dv = v - p->portRect.top;
 	p->portRect = rect_off(p->portRect, dh, dv);
+	p->bounds = rect_off(p->bounds, dh, dv);
+	rgn_offset(p->vis, dh, dv);
+	pixmap_write(p);
+	port_tok_write(p);
+}
+
+// PortSize(width, height): the current port's rectangle keeps its top left
+static void sh_PortSize(PPC *c)
+{
+	Port *p = CUR;
+	if (!p)
+		return;
+	p->portRect.right = (int16_t)(p->portRect.left + (int16_t)A(0));
+	p->portRect.bottom = (int16_t)(p->portRect.top + (int16_t)A(1));
+	port_tok_write(p);
+}
+// MovePortTo(left, top): the port rectangle's top left goes to that global point (the bounds move)
+static void sh_MovePortTo(PPC *c)
+{
+	Port *p = CUR;
+	if (!p)
+		return;
+	int dh = (p->portRect.left - (int16_t)A(0)) - p->bounds.left, dv = (p->portRect.top - (int16_t)A(1)) - p->bounds.top;
 	p->bounds = rect_off(p->bounds, dh, dv);
 	rgn_offset(p->vis, dh, dv);
 	pixmap_write(p);
@@ -1987,7 +2030,7 @@ void qd_init(void)
 }
 
 static const ShimDef qdshims[] = {
-	S(GetPort), S(GetQDGlobalsThePort), S(SetPort), S(GetPortBounds), S(SetPortBounds), S(GetPortVisibleRegion), S(SetPortVisibleRegion),
+	S(GetPort), S(PortSize), S(MovePortTo), S(CreateNewPort), S(DisposePort), S(GetQDGlobalsThePort), S(SetPort), S(GetPortBounds), S(SetPortBounds), S(GetPortVisibleRegion), S(SetPortVisibleRegion),
 	S(GetPortPixMap), S(GetPortBitMapForCopyBits), S(GetPortTextFont), S(GetPortTextSize), S(GetPortTextFace),
 	S(GetPortTextMode), S(GetPortPenMode), S(GetPortGrafProcs), S(SetPortGrafProcs), S(IsPortRegionBeingDefined), S(QDFlushPortBuffer),
 	S(QDError), S(QDDone), S(LockPortBits), {"UnlockPortBits", sh_LockPortBits}, S(SetOrigin), S(ClipRect), S(SetClip),

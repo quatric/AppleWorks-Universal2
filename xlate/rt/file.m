@@ -1220,9 +1220,14 @@ static void sh_PBGetCatInfoSync(PPC *c)
 	struct stat st;
 	stat(path.fileSystemRepresentation, &st);
 	ST16(pb + 22, VREF);
+	// Finder info (DInfo/FInfo at 32) and extended Finder info (DXInfo/FXInfo at 84), as the volume keeps them
+	uint8_t fi[32] = {0};
+	getxattr(path.fileSystemRepresentation, "com.apple.FinderInfo", fi, 32, 0, 0);
+	ST8(pb + 31, 0);   // ioACUser: the owner, with every access right
 	if (d) {
 		ST8(pb + 30, 0x10);
-		memset(G(pb + 32), 0, 16);
+		memcpy(G(pb + 32), fi, 16);
+		memcpy(G(pb + 84), fi + 16, 16);
 		ST32(pb + 48, dir_id(path));
 		ST16(pb + 52, (uint16_t)listing(path).count);
 		ST32(pb + 72, mac_date(st.st_birthtime));
@@ -1233,10 +1238,11 @@ static void sh_PBGetCatInfoSync(PPC *c)
 		uint32_t t, cr;
 		uint16_t fl;
 		get_type(path.fileSystemRepresentation, &t, &cr, &fl);
-		memset(G(pb + 32), 0, 16);
+		memcpy(G(pb + 32), fi, 16);
 		ST32(pb + 32, t);
 		ST32(pb + 36, cr);
 		ST16(pb + 40, fl);
+		memcpy(G(pb + 84), fi + 16, 16);
 		ST32(pb + 54, (uint32_t)st.st_size);
 		ST32(pb + 58, (uint32_t)((st.st_size + 511) & ~511));
 		ssize_t rl = getxattr(path.fileSystemRepresentation, "com.apple.ResourceFork", NULL, 0, 0, 0);
@@ -1245,6 +1251,9 @@ static void sh_PBGetCatInfoSync(PPC *c)
 		ST32(pb + 76, mac_date(st.st_mtime));
 		ST32(pb + 100, dir_id(path.stringByDeletingLastPathComponent));
 	}
+	if (getenv("PPC_DBG_CAT"))
+		ppc_log("fs: catinfo index %d dir %d -> %s%s (from %s)", index, dir, path.fileSystemRepresentation, d ? " [dir]" : "",
+			ppc_func_name(LD32(c->r[1] + 8)));
 	ST16(pb + 16, 0);
 	RET(0);
 }

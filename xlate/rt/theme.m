@@ -321,6 +321,24 @@ static NSData *roman(NSString *s)
 	return d ? d : [NSData data];
 }
 
+// one line of theme text measured the way DrawThemeTextBox and TruncateThemeText draw and measure it;
+// -1 without a port
+int theme_text_metrics(int id, NSString *s, int *height, int *descent)
+{
+	Port *p = qd_port;
+	if (!p)
+		return -1;
+	SavedFont sf = theme_font_set(p, id);
+	int asc, desc, wid, lead;
+	qd_font_info(p, &asc, &desc, &wid, &lead);
+	NSData *d = roman(s);
+	int w = (int)ceil(qd_text_width(p, d.bytes, (int)d.length));
+	theme_font_restore(p, sf);
+	*height = asc + desc;
+	*descent = desc;
+	return w;
+}
+
 // TruncateThemeText(CFMutableStringRef, fontID, state, SInt16 pixelWidth, TruncCode, Boolean *truncated):
 // truncEnd 0, truncMiddle 0x4000
 static void sh_TruncateThemeText(PPC *c)

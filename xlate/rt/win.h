@@ -28,6 +28,7 @@ typedef struct Win {
 	int has_content_color;
 	int in_update;
 	Rgn *saved_vis;
+	QPoint saved_org;   // the port origin when saved_vis was taken
 } Win;
 
 Win *WIN(uint32_t tok);
@@ -37,6 +38,7 @@ void win_dirty(Win *w, QRect r);
 void win_flush(Win *w);
 void win_flush_all(void);
 QPoint win_origin(Win *w);
+void win_frame_redraw(Win *w);                      // a custom definition draws the frame again
 void win_invalidate(Win *w, QRect r);                 // r in the port's local coordinates
 void win_update_rgn(Win *w, const Rgn *g, int op);   // g likewise, op RGN_UNION or RGN_DIFF
 Win *win_at(int h, int v);       // the window at a global point

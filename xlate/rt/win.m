@@ -428,6 +428,11 @@ static int wdef_region(Win *w, int code, Rgn *g)
 	ST16(rec + 4, (uint16_t)code);
 	wdef_call(w, 8, rec);
 	Rgn *got = RGN(rh);
+	if (getenv("PPC_DBG_WREG") && got)
+		ppc_log("wdef_region %08x code %d -> %d,%d,%d,%d; port rect %d,%d,%d,%d bounds %d,%d,%d,%d cur %08x lr %s", w->tok, code,
+			got->bbox.top, got->bbox.left, got->bbox.bottom, got->bbox.right, w->port->portRect.top, w->port->portRect.left,
+			w->port->portRect.bottom, w->port->portRect.right, w->port->bounds.top, w->port->bounds.left, w->port->bounds.bottom,
+			w->port->bounds.right, qd_port ? qd_port->tok : 0, ppc_func_name(ppc_cpu->lr));
 	if (!got || rgn_empty(got))
 		return 0;
 	rgn_copy(g, got);
@@ -526,6 +531,8 @@ static void wdef_render(Win *w)
 	[(XLWinView *)w->view setNeedsDisplay:YES];
 }
 
+void win_frame_redraw(Win *w) { wdef_render(w); }
+
 // kWindowMsgHitTest for a global point: the FindWindow part code, -1 if the definition has none
 static int wdef_part(Win *w, QPoint p)
 {
@@ -533,7 +540,11 @@ static int wdef_part(Win *w, QPoint p)
 		return -1;
 	static const int8_t parts[13] = {0, 3, 4, 5, 6, 7, 8, -1, -1, 11, 12, 13, 15};
 	uint32_t hit = wdef_call(w, 1, (uint32_t)(uint16_t)p.v << 16 | (uint16_t)p.h);
-	return hit < 13 ? parts[hit] : -1;
+	if (hit < 13)
+		return parts[hit];
+	// a definition's own hit codes come back two higher, as the window manager has always done
+	// (Starting Points' tabs answer 4998, and the app looks for part 5000)
+	return hit < 0x7ffe ? (int)hit + 2 : -1;
 }
 
 static Win *win_create(int wclass, uint32_t attrs, QRect bounds, const uint8_t *title, int visible, uint32_t refCon, uint32_t behind)
@@ -875,6 +886,15 @@ static void sh_ShowWindow(PPC *c) { Win *w = WIN(A(0)); if (w) win_show(w); }
 static void sh_HideWindow(PPC *c) { Win *w = WIN(A(0)); if (w) win_hide(w); }
 static void sh_SelectWindow(PPC *c) { Win *w = WIN(A(0)); if (w) select_window(w); }
 static void sh_BringToFront(PPC *c) { Win *w = WIN(A(0)); if (w) select_window(w); }
+// ReshapeCustomWindow: the definition's regions changed (the Starting Points tabs, say): the frame is
+// asked for them again and redrawn
+static void sh_ReshapeCustomWindow(PPC *c)
+{
+	Win *w = WIN(A(0));
+	if (w)
+		wdef_render(w);
+	RET(0);
+}
 static void sh_HiliteWindow(PPC *c) { Win *w = WIN(A(0)); if (w && w->hilited != (int)(A(1) & 0xff)) { w->hilited = A(1) & 0xff; wdef_render(w); } }
 static void sh_SendBehind(PPC *c)
 {
@@ -1107,6 +1127,7 @@ static void sh_BeginUpdate(PPC *c)
 	if (!w->saved_vis)
 		w->saved_vis = rgn_new();
 	rgn_copy(w->saved_vis, p->vis);
+	w->saved_org = (QPoint){p->portRect.top, p->portRect.left};
 	if (ppc_verbose >= 2)
 		ppc_log("BeginUpdate %08x: vis %d,%d,%d,%d update %d,%d,%d,%d port %d,%d,%d,%d", w->tok, p->vis->bbox.top, p->vis->bbox.left,
 			p->vis->bbox.bottom, p->vis->bbox.right, w->update->bbox.top, w->update->bbox.left, w->update->bbox.bottom,
@@ -1122,7 +1143,10 @@ static void sh_EndUpdate(PPC *c)
 	Win *w = WIN(A(0));
 	if (!w || !w->in_update)
 		return;
-	rgn_copy(w->port->vis, w->saved_vis);
+	// the visible region is in local coordinates: an origin moved during the update moves it too
+	Port *p = w->port;
+	rgn_offset(w->saved_vis, p->portRect.left - w->saved_org.h, p->portRect.top - w->saved_org.v);
+	rgn_copy(p->vis, w->saved_vis);
 	w->in_update = 0;
 }
 static void sh_DrawGrowIcon(PPC *c) { (void)c; }
@@ -1260,7 +1284,7 @@ static void sh_FindWindow_(PPC *c)
 
 static const ShimDef winshims[] = {
 	S(NewCWindow), S(GetNewCWindow), S(CreateNewWindow), S(CreateCustomWindow), S(DisposeWindow), S(ShowWindow),
-	S(HideWindow), S(SelectWindow), S(BringToFront), S(HiliteWindow), S(SendBehind), S(FrontWindow), S(FrontNonFloatingWindow),
+	S(HideWindow), S(SelectWindow), S(BringToFront), S(HiliteWindow), S(ReshapeCustomWindow), S(SendBehind), S(FrontWindow), S(FrontNonFloatingWindow),
 	S(GetFrontWindowOfClass), S(GetNextWindowOfClass), S(GetWindowList), S(GetNextWindow), S(GetWRefCon),
 	S(SetWRefCon), S(GetWTitle), S(SetWTitle), S(GetWindowKind), S(SetWindowKind), S(GetWindowClass),
 	S(GetWindowPort), S(SetPortWindowPort), S(GetWindowFromPort), S(IsWindowVisible), S(IsValidWindowPtr),
