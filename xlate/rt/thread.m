@@ -217,8 +217,13 @@ static void sh_GetCurrentThread(PPC *c)
 	RET_OK(c);
 }
 
+void net_run(void);
+
 static void sh_YieldToAnyThread(PPC *c)
 {
+	// a yield is where Open Transport's notifiers get their time (deferred tasks on the real system),
+	// so a thread they wake is ready below
+	net_run();
 	Thread *t = next_ready(cur);
 	if (t)
 		switch_to(t);
@@ -227,6 +232,10 @@ static void sh_YieldToAnyThread(PPC *c)
 
 static void sh_YieldToThread(PPC *c)
 {
+	if (!A(0)) {   // kNoThreadID: any thread that is ready
+		sh_YieldToAnyThread(c);
+		return;
+	}
 	Thread *t = find(A(0));
 	if (!t) {
 		RET_ERR(c, threadNotFoundErr);

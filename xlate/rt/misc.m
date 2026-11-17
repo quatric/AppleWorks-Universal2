@@ -49,6 +49,8 @@ static void sh_Gestalt(PPC *c)
 	case 'osl ': v = 1; break;
 	case 'carb': v = 0x0160; break;       // CarbonLib 1.6
 	case 'cbon': v = 0x0160; break;
+	case 'otan': v = 0x33; break;         // Open Transport present and loaded, TCP present and loaded
+	case 'otvr': v = 0x01308000; break;   // Open Transport 1.3
 	case 'ttxt': v = 0; break;
 	case 'txnv': v = 0x01300000; break;
 	case 'nav ': v = 0x7; break;

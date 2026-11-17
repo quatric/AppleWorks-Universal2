@@ -279,6 +279,7 @@ static void write_event(uint32_t a, Ev *e)
 }
 
 void timers_run(void);
+void net_run(void);
 
 static int get_event(uint16_t mask, uint32_t evp, double wait)
 {
@@ -286,6 +287,7 @@ static int get_event(uint16_t mask, uint32_t evp, double wait)
 	for (;;) {
 		ev_pump(0);
 		timers_run();
+		net_run();
 		Ev e;
 		int got = take(mask, &e, 1) || update_event(mask, &e);
 		if (got) {

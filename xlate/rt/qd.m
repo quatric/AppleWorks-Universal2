@@ -1880,6 +1880,7 @@ static void make_gdevice(void)
 }
 static void sh_GetMainDevice(PPC *c) { RET(gdev_main); }
 static void sh_GetGDevice(PPC *c) { RET(gdev_main); }
+static void sh_GetGWorldDevice(PPC *c) { RET(gdev_main); }   // every port draws for the main device
 static void sh_GetDeviceList(PPC *c) { RET(gdev_main); }
 static void sh_GetNextDevice(PPC *c) { RET(0); }
 static void sh_GetMaxDevice(PPC *c) { RET(gdev_main); }
@@ -2048,7 +2049,7 @@ static const ShimDef qdshims[] = {
 	S(TextWidth), S(CharWidth), S(GetFontInfo), S(GetFNum), S(GetFontName), S(FMGetFontFamilyFromName), S(FMGetFontFamilyTextEncoding),
 	S(RevertTextEncodingToScriptInfo), S(GetSysFont), S(GetAppFont),
 	S(GetDefFontSize), S(SetOutlinePreferred), S(FMSwapFont), S(TruncString), S(NewGWorld), S(DisposeGWorld),
-	S(GetGWorld), S(SetGWorld), S(GetGWorldPixMap), S(LockPixels), {"UnlockPixels", sh_StdNop}, S(GetPixBaseAddr),
+	S(GetGWorld), S(GetGWorldDevice), S(SetGWorld), S(GetGWorldPixMap), S(LockPixels), {"UnlockPixels", sh_StdNop}, S(GetPixBaseAddr),
 	S(GetPixDepth), S(NewGWorldFromPtr), S(CopyBits), S(StdBits), S(CopyMask), S(SetStdCProcs), S(GetMainDevice),
 	S(GetGDevice), S(GetDeviceList), S(GetNextDevice), S(GetMaxDevice), S(TestDeviceAttribute), S(GDeviceChanged),
 	S(GetGrayRgn), S(GetQDGlobalsBlack), S(GetQDGlobalsWhite), S(GetQDGlobalsGray), S(GetQDGlobalsLightGray),

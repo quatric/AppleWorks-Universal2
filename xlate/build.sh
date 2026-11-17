@@ -58,6 +58,8 @@ for d in "AppleWorks Essentials" Clippings "Starting Points"; do
 	ln -s "../../../$d" "$APP/Contents/Resources/$d"
 	rm -f "build/$d"; ln -s "../game/$NAME/$d" "build/$d"
 done
+# the Starting Points Web tab's documents, from tools/webmirror.sh (the runtime serves that host from it)
+[ -d "game/$NAME/.Web Mirror" ] && cp -R "game/$NAME/.Web Mirror" "$APP/Contents/Resources/Web Mirror"
 $PY -I xlate/mkinfo.py "$SRC" "$EXE" "AppleWorks" "$APP"
 /usr/bin/xattr -cr "$APP"; codesign --force --deep -s - "$APP"
 echo "$APP"

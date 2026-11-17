@@ -209,7 +209,7 @@ static void sh_FSMakeFSSpec(PPC *c)
 	// FSMakeFSSpec(vRefNum, dirID, fileName, FSSpec *)
 	uint32_t nm = A(2);
 	NSString *p = resolve((int16_t)A(0), (int32_t)A(1), nm ? G(nm + 1) : NULL, nm ? LD8(nm) : 0);
-	if (ppc_verbose >= 3)
+	if (ppc_verbose >= 3 || getenv("PPC_DBG_CAT"))
 		ppc_log("FSMakeFSSpec %d %d '%.*s' -> %s", (int16_t)A(0), (int32_t)A(1), nm ? LD8(nm) : 0, nm ? (char *)G(nm + 1) : "",
 			p ? p.fileSystemRepresentation : "(none)");
 	if (!p) {
@@ -301,6 +301,15 @@ static void sh_FSDeleteObject(PPC *c)
 }
 
 static void sh_FSGetDataForkName(PPC *c) { ST16(A(0), 0); RET(0); }
+// FSGetResourceForkName(HFSUniStr255 *): "RESOURCE_FORK", the name FSOpenFork takes for it
+static void sh_FSGetResourceForkName(PPC *c)
+{
+	static const char n[] = "RESOURCE_FORK";
+	ST16(A(0), (uint16_t)(sizeof n - 1));
+	for (uint32_t i = 0; i < sizeof n - 1; i++)
+		ST16(A(0) + 2 + 2 * i, (uint16_t)n[i]);
+	RET(0);
+}
 
 // ---- forks ------------------------------------------------------------------------------------------------
 
@@ -1006,6 +1015,8 @@ static void sh_PBHCreateSync(PPC *c)
 	int fd = open(p.fileSystemRepresentation, O_CREAT | O_WRONLY | O_EXCL, 0644);
 	if (fd >= 0)
 		close(fd);
+	if (getenv("PPC_DBG_CAT"))
+		ppc_log("fs: create %s -> %d", p.fileSystemRepresentation, fd >= 0);
 	pb_done(c, A(0), fd >= 0 ? 0 : -120);
 }
 static void sh_HDelete(PPC *c)
@@ -1024,6 +1035,8 @@ static void sh_PBHDeleteSync(PPC *c)
 {
 	NSString *p = hpb_path(A(0));
 	const char *s = p.fileSystemRepresentation;
+	if (getenv("PPC_DBG_CAT"))
+		ppc_log("fs: delete %s", s);
 	pb_done(c, A(0), !p ? -120 : unlink(s) == 0 || rmdir(s) == 0 ? 0 : -43);
 }
 
@@ -1131,7 +1144,10 @@ static void sh_FSpGetFInfo(PPC *c)
 {
 	char p[1024];
 	BOOL d;
-	if (!fsspec_path(A(0), p, sizeof p) || !exists(@(p), &d) || d) {
+	int ok = fsspec_path(A(0), p, sizeof p) && exists(@(p), &d) && !d;
+	if (getenv("PPC_DBG_CAT"))
+		ppc_log("fs: getfinfo %s -> %d", p, ok);
+	if (!ok) {
 		RET(-43);
 		return;
 	}
@@ -1453,10 +1469,42 @@ static void sh_GetAliasInfo(PPC *c)
 	RET(0);
 }
 
+// ResolveAliasFile(FSSpec *, Boolean resolveChains, Boolean *targetIsFolder, Boolean *wasAliased): an alias
+// file (Finder's alias flag, or a macOS alias) becomes its target; anything else stays as it is
+static void sh_ResolveAliasFile(PPC *c)
+{
+	char p[1024];
+	BOOL d = NO;
+	if (!fsspec_path(A(0), p, sizeof p) || !exists(@(p), &d)) {
+		RET(-43);
+		return;
+	}
+	int aliased = 0;
+	if (!d) {
+		NSURL *u = [NSURL fileURLWithPath:@(p)];
+		NSNumber *isAlias = nil;
+		[u getResourceValue:&isAlias forKey:NSURLIsAliasFileKey error:nil];
+		if (isAlias.boolValue) {
+			NSURL *t = [NSURL URLByResolvingAliasFileAtURL:u options:NSURLBookmarkResolutionWithoutUI error:nil];
+			if (!t || !exists(t.path, &d)) {
+				RET(-43);   // fnfErr: the target is gone
+				return;
+			}
+			write_spec(A(0), t.path);
+			aliased = 1;
+		}
+	}
+	if (A(2))
+		ST8(A(2), d ? 1 : 0);
+	if (A(3))
+		ST8(A(3), aliased);
+	RET(0);
+}
+
 static const ShimDef fileshims[] = {
 	S(FSMakeFSSpec), S(FSpMakeFSRef), S(FSMakeFSRefUnicode), S(FSCreateFileUnicode), S(FSDeleteObject),
-	S(FSGetDataForkName), S(FSpOpenDF), S(FSRead), S(FSWrite), S(FSClose), S(FSCloseFork), S(GetEOF), S(SetEOF),
-	S(GetFPos), S(SetFPos), S(FSpCreate), S(FSpDelete), S(FSpRename), S(FSpSetFLock), S(FSpRstFLock), S(PBHCreateSync), S(PBHDeleteSync), S(FSGetCatalogInfo), S(FSpDirCreate), S(FSpGetFInfo), S(FSpSetFInfo),
+	S(FSGetDataForkName), S(FSGetResourceForkName), S(FSpOpenDF), S(FSRead), S(FSWrite), S(FSClose), S(FSCloseFork), S(GetEOF), S(SetEOF),
+	S(GetFPos), S(SetFPos), S(FSpCreate), S(FSpDelete), S(FSpRename), S(FSpSetFLock), S(FSpRstFLock), S(PBHCreateSync), S(PBHDeleteSync), S(FSGetCatalogInfo), S(FSpDirCreate), S(FSpGetFInfo), S(FSpSetFInfo), S(ResolveAliasFile),
 	S(FSpExchangeFiles), S(PBGetCatInfoSync), S(PBSetCatInfoSync), S(PBHGetVInfoSync), S(PBXGetVolInfoSync),
 	S(FlushVol), S(FindFolder), S(NewAlias), S(ResolveAlias), S(GetAliasInfo), S(HDelete), S(PBHGetFInfoSync), S(FSOpenFork), S(FSReadFork), S(FSWriteFork),
 	S(FSSetForkPosition), S(FSGetForkPosition), S(FSGetForkSize), S(FSSetForkSize), S(FSFlushFork), S(FSGetForkCBInfo),

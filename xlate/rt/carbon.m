@@ -715,6 +715,28 @@ static void sh_TETextBox(PPC *c)
 	p->pnLoc = saved;
 }
 
+// LowercaseText(Ptr, SInt16 len, ScriptCode): Mac Roman letters to lower case, in place
+static void sh_LowercaseText(PPC *c)
+{
+	uint8_t *t = G(A(0));
+	int n = (int16_t)A(1);
+	static const char up[] = "\x80\x81\x82\x83\x84\x85\x86\xcb\xcc\xcd\xae\xaf\xe5\xe6\xe7\xe8\xe9\xea\xeb\xec\xed\xee\xef\xf1\xf2\xf3\xf4\xce\xd9";
+	static const char lo[] = "\x8a\x8c\x8d\x8e\x96\x9a\x9f\x88\x8b\x9b\xbe\xbf\x89\x90\x87\x91\x8f\x92\x94\x95\x93\x97\x99\x98\x9c\x9e\x9d\xcf\xd8";
+	for (int i = 0; i < n; i++) {
+		if (t[i] >= 'A' && t[i] <= 'Z')
+			t[i] += 32;
+		else if (t[i] >= 0x80) {
+			const char *q = strchr(up, (char)t[i]);
+			if (q)
+				t[i] = (uint8_t)lo[q - up];
+		}
+	}
+}
+
+// GetFileTranslationPaths(FSSpec *, docType, maxCount, FileTranslationSpec *): the Translation Manager is
+// Mac OS 9's; none here
+static void sh_GetFileTranslationPaths(PPC *c) { RET(0); }
+
 static const ShimDef carbonshims[] = {
 	S(SubPt), S(AddPt), S(Pt2Rect), S(GetPortSpExtra), S(FixRatio), S(GetPortPenLocation), S(TEAutoView), S(GetCTSeed), S(QTNewAtomContainer), S(TETextBox),
 	S(ObscureCursor), S(GetScriptManagerVariable), S(GetPen), S(QDTextBounds),
@@ -731,7 +753,7 @@ static const ShimDef carbonshims[] = {
 	S(GetQDGlobalsScreenBits), S(GetCTable), S(DisposeCTable), S(IsRegionRectangular), S(QDRegionToRects),
 	S(QDIsPortBuffered), S(CopyDeepMask), S(GetAvailableWindowPositioningBounds), S(ChangeWindowAttributes),
 	S(SetThemeWindowBackground), S(ShowHide), S(PaintOne), S(SetControlProperty),
-	S(NewCollection), S(FindNextComponent), S(ICStart), S(AEInstallCoercionHandler), S(InitDateCache),
+	S(NewCollection), S(FindNextComponent), S(ICStart), S(LowercaseText), S(GetFileTranslationPaths), S(AEInstallCoercionHandler), S(InitDateCache),
 	S(LMGetApFontID), S(LMGetKbdType), S(LMGetCurApName), S(HideCursor), S(ShowCursor), S(GetCaretTime), S(CFStringCreateMutable), S(CFBundleGetMainBundle), S(CFBundleCopyBundleURL), S(GetFrontProcess),
 	S(SameProcess),
 };

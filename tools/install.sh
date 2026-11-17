@@ -42,3 +42,6 @@ rm -rf dl/inst
 # every PowerPC executable left must be a Carbon one
 $PY -I tools/carboncheck.py "$G"
 echo "$G"
+# the Starting Points Web tab's documents, from the Internet Archive (needs the network; without it
+# the tab's items stay unavailable, and tools/webmirror.sh can be run later)
+sh tools/webmirror.sh || echo "no Web Mirror: run tools/webmirror.sh when online" >&2
