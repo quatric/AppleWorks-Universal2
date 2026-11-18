@@ -17,6 +17,7 @@
 #import <ImageIO/ImageIO.h>
 #include "menu.h"
 #include "win.h"
+#include "ctl.h"
 
 typedef struct { double t; char cmd[256]; } Step;
 static Step *steps;
@@ -259,6 +260,13 @@ static void run(const char *cmd)
 			ppc_log("script: window %08x '%.*s' class %d visible %d frame %d,%d,%d,%d cocoa %.0f,%.0f %.0fx%.0f", w->tok, w->title[0], w->title + 1, w->wclass,
 				w->visible, w->frame.top, w->frame.left, w->frame.bottom, w->frame.right, ((NSWindow *)w->ns).frame.origin.x,
 				((NSWindow *)w->ns).frame.origin.y, ((NSWindow *)w->ns).frame.size.width, ((NSWindow *)w->ns).frame.size.height);
+	} else if (!strcmp(op, "controls")) {
+		for (char *q = a; *q; q++)
+			if (*q == '_')
+				*q = ' ';
+		Win *w = titled(a);
+		if (w)
+			ctl_dump(w);
 	} else if (!strcmp(op, "dump")) {
 		uint32_t at = (uint32_t)strtoul(a, NULL, 16);
 		int n = atoi(b);

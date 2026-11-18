@@ -970,8 +970,25 @@ static void sh_MovePortTo(PPC *c)
 	port_tok_write(p);
 }
 
-static void sh_ClipRect(PPC *c) { if (CUR) rgn_set_rect(CUR->clip, RECT(A(0))); }
-static void sh_SetClip(PPC *c) { Rgn *g = RGN(A(0)); if (CUR && g) rgn_copy(CUR->clip, g); }
+static void sh_ClipRect(PPC *c)
+{
+	if (!CUR)
+		return;
+	rgn_set_rect(CUR->clip, RECT(A(0)));
+	if (getenv("PPC_DBG_CLIP")) {
+		QRect r = RECT(A(0));
+		ppc_log("ClipRect port %08x %d,%d,%d,%d", CUR->tok, r.top, r.left, r.bottom, r.right);
+	}
+}
+static void sh_SetClip(PPC *c)
+{
+	Rgn *g = RGN(A(0));
+	if (!CUR || !g)
+		return;
+	rgn_copy(CUR->clip, g);
+	if (getenv("PPC_DBG_CLIP"))
+		ppc_log("SetClip port %08x %d,%d,%d,%d (%d rects)", CUR->tok, g->bbox.top, g->bbox.left, g->bbox.bottom, g->bbox.right, g->n);
+}
 static void sh_GetClip(PPC *c)
 {
 	Rgn *g = RGN(A(0));
@@ -986,7 +1003,8 @@ static void sh_GlobalToLocal(PPC *c)
 	if (!CUR)
 		return;
 	QPoint p = LDPT(A(0));
-	QPoint o = CUR->win ? win_origin(CUR->win) : (QPoint){0, 0};
+	struct Win *ow = CUR->win ? CUR->win : CUR->coord_win;
+	QPoint o = ow ? win_origin(ow) : (QPoint){0, 0};
 	p.h = (int16_t)(p.h - o.h + CUR->portRect.left);
 	p.v = (int16_t)(p.v - o.v + CUR->portRect.top);
 	STPT(A(0), p);
@@ -996,7 +1014,8 @@ static void sh_LocalToGlobal(PPC *c)
 	if (!CUR)
 		return;
 	QPoint p = LDPT(A(0));
-	QPoint o = CUR->win ? win_origin(CUR->win) : (QPoint){0, 0};
+	struct Win *ow = CUR->win ? CUR->win : CUR->coord_win;
+	QPoint o = ow ? win_origin(ow) : (QPoint){0, 0};
 	p.h = (int16_t)(p.h + o.h - CUR->portRect.left);
 	p.v = (int16_t)(p.v + o.v - CUR->portRect.top);
 	STPT(A(0), p);
@@ -1474,6 +1493,9 @@ static void sh_BitMapToRegion(PPC *c)
 	}
 	rb_end(&rb);
 	rgn_sync(A(0));
+	if (getenv("PPC_DBG_BMR"))
+		ppc_log("BitMapToRegion bounds %d,%d,%d,%d rowBytes %d -> %d,%d,%d,%d", b.bounds.top, b.bounds.left, b.bounds.bottom,
+			b.bounds.right, (int)b.rowBytes, g->bbox.top, g->bbox.left, g->bbox.bottom, g->bbox.right);
 	RET(0);
 }
 
@@ -1538,6 +1560,16 @@ static void sh_CloseRgn(PPC *c)
 			rgn_op(g, g, &t, RGN_XOR);
 		}
 	free(t.r);
+	if (getenv("PPC_DBG_BMR")) {
+		ppc_log("CloseRgn: %d polygon(s), rects bbox %d,%d,%d,%d -> %d,%d,%d,%d", rr.npolys, rr.acc.bbox.top, rr.acc.bbox.left,
+			rr.acc.bbox.bottom, rr.acc.bbox.right, g->bbox.top, g->bbox.left, g->bbox.bottom, g->bbox.right);
+		for (int i = 0; i < rr.npolys; i++) {
+			char b[600] = {0};
+			for (int k = 0; k < rr.polys[i].n && k < 24; k++)
+				snprintf(b + strlen(b), sizeof b - strlen(b), " %d,%d", rr.polys[i].pts[k].h, rr.polys[i].pts[k].v);
+			ppc_log("  poly %d:%s", rr.polys[i].n, b);
+		}
+	}
 	rr.npolys = 0;
 	rgn_sync(A(0));
 }
@@ -1778,6 +1810,9 @@ static void sh_CopyBits(PPC *c)
 			A(1), dp ? dp->tok : 0, dp ? dp->bounds.top : 0, dp ? dp->bounds.left : 0, dp ? dp->bounds.bottom : 0, dp ? dp->bounds.right : 0,
 			sr.top, sr.left, sr.bottom, sr.right, dr.top, dr.left, dr.bottom, dr.right, (int16_t)A(4),
 			m ? m->bbox.top : 0, m ? m->bbox.left : 0, m ? m->bbox.bottom : 0, m ? m->bbox.right : 0);
+		if (m && getenv("PPC_DBG_COPY")[0] == '2')
+			for (int i = 0; i < m->n && i < 40; i++)
+				ppc_log("  mask %d,%d,%d,%d", m->r[i].top, m->r[i].left, m->r[i].bottom, m->r[i].right);
 	}
 	qd_copybits(A(0), A(1), RECT(A(2)), RECT(A(3)), (int16_t)A(4), A(5) ? RGN(A(5)) : NULL);
 }

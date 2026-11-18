@@ -16,7 +16,7 @@ OUT="game/AppleWorks 6/.Web Mirror/awpicts.apple.com"
 [ -d "game/AppleWorks 6" ] || { echo "install AppleWorks first (tools/install.sh)" >&2; exit 1; }
 mkdir -p dl/awpicts
 CDX="https://web.archive.org/cdx/search/cdx?url=awpicts.apple.com/docs/US/&matchType=prefix&output=json&filter=statuscode:200&fl=timestamp,original"
-curl -sf --retry 3 "$CDX" > dl/awpicts/cdx.json
+curl -sf --http1.1 --retry 3 "$CDX" > dl/awpicts/cdx.json
 # the latest capture of each document
 $PY -I - dl/awpicts/cdx.json > dl/awpicts/list.txt <<'EOF'
 import json, sys, re
@@ -40,7 +40,7 @@ while read ts path <&3; do
 		mkdir -p "$(dirname "$src")"
 		# gently: the archive turns away quick successions of requests
 		sleep 2
-		curl -sf --retry 6 --retry-all-errors --retry-delay 10 -o "$src" </dev/null "https://web.archive.org/web/${ts}id_/http://awpicts.apple.com$path" \
+		curl -sf --http1.1 --retry 6 --retry-all-errors --retry-delay 10 -o "$src" </dev/null "https://web.archive.org/web/${ts}id_/http://awpicts.apple.com$path" \
 			|| { echo "skipped $path"; rm -f "$src"; continue; }
 	fi
 	cp "$src" "$f"
@@ -55,7 +55,7 @@ for item in newsletter:20001109112400 templates:20010302181657; do
 	src="dl/awpicts/raw/mb$ts/$n.cwk"
 	if [ ! -s "$src" ]; then
 		mkdir -p "$(dirname "$src")"
-		curl -sf --retry 6 --retry-all-errors --retry-delay 10 -o "$src" </dev/null \
+		curl -sf --http1.1 --retry 6 --retry-all-errors --retry-delay 10 -o "$src" </dev/null \
 			"https://web.archive.org/web/${ts}id_/http://awpicts.apple.com:80/docs/US/$n.cwk" || { echo "skipped the Web tab's $n"; rm -f "$src"; continue; }
 	fi
 	gzip -9 -n -c "$src" > "$OUT/docs/US/${n}6-1.cwk.gz"

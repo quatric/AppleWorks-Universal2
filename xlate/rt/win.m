@@ -433,6 +433,9 @@ static int wdef_region(Win *w, int code, Rgn *g)
 			got->bbox.top, got->bbox.left, got->bbox.bottom, got->bbox.right, w->port->portRect.top, w->port->portRect.left,
 			w->port->portRect.bottom, w->port->portRect.right, w->port->bounds.top, w->port->bounds.left, w->port->bounds.bottom,
 			w->port->bounds.right, qd_port ? qd_port->tok : 0, ppc_func_name(ppc_cpu->lr));
+	if (getenv("PPC_DBG_WREG") && got && getenv("PPC_DBG_WREG")[0] == '2')
+		for (int i = 0; i < got->n && i < 40; i++)
+			ppc_log("  rect %d,%d,%d,%d", got->r[i].top, got->r[i].left, got->r[i].bottom, got->r[i].right);
 	if (!got || rgn_empty(got))
 		return 0;
 	rgn_copy(g, got);
@@ -454,14 +457,15 @@ static void wdef_render(Win *w)
 			s->bbox.bottom, s->bbox.right, w->frame.top, w->frame.left, w->frame.bottom, w->frame.right, skirt);
 	int wd = w->frame.right - w->frame.left;
 	if (skirt > 0 && wd > 0) {
-		// the frame, drawn by the definition into a port covering the structure, in the window port's
-		// local coordinates (the content's top left is 0,0; the frame lies around it)
-		QRect sb = rect_off(s->bbox, -w->frame.left, -w->frame.top);
+		// the frame, drawn by the definition as into the Window Manager's port: local coordinates are
+		// global ones (it mixes the window's regions, which are global, with points it converts through
+		// the port), the port rectangle is the content, and the pixels cover the structure
+		QRect sb = s->bbox;
 		Port *fp = port_new(0, 0, sb, 1);
-		int ht = w->frame.bottom - w->frame.top;
-		fp->portRect = (QRect){0, 0, (int16_t)ht, (int16_t)wd};   // the port rectangle is the content
+		fp->portRect = w->frame;                                   // the content, global
 		rgn_set_rect(fp->vis, sb);                                 // the frame is drawn outside it
 		PUTRECT(fp->tok + 16, fp->portRect);                       // the CGrafPort copy of it
+		fp->coord_win = w;                                         // so LocalToGlobal is the identity
 		Port *save = w->port, *savecur = qd_port;
 		w->port = fp;
 		ST32(w->tok, fp->tok);
@@ -479,11 +483,10 @@ static void wdef_render(Win *w)
 		uint32_t *px = realloc(w->skirt_pix, (size_t)wd * skirt * 4);
 		for (int y = 0; y < skirt; y++)
 			for (int x = 0; x < wd; x++) {
-				int gh = w->frame.left + x, gv = w->frame.bottom + y;          // global
-				int lh = x, lv = w->frame.bottom - w->frame.top + y;            // local
+				int gh = w->frame.left + x, gv = w->frame.bottom + y;          // global, the frame port's local
 				uint32_t v = 0;
-				if (rgn_contains(s, gh, gv) && lh >= sb.left && lh < sb.right && lv >= sb.top && lv < sb.bottom) {
-					uint32_t q = LD32(fp->pix + (uint32_t)((lv - sb.top) * fp->rowBytes + (lh - sb.left) * 4));
+				if (rgn_contains(s, gh, gv) && gh >= sb.left && gh < sb.right && gv >= sb.top && gv < sb.bottom) {
+					uint32_t q = LD32(fp->pix + (uint32_t)((gv - sb.top) * fp->rowBytes + (gh - sb.left) * 4));
 					v = 0xff000000u | (q & 0xffffff);   // guest xRGB -> ARGB
 				}
 				px[y * wd + x] = v;
@@ -1054,6 +1057,8 @@ static void sh_GetWindowBounds(PPC *c)
 			r = g->bbox;
 		rgn_free(g);
 	}
+	if (getenv("PPC_DBG_WB"))
+		ppc_log("GetWindowBounds %08x code %d -> %d,%d,%d,%d", w->tok, code, r.top, r.left, r.bottom, r.right);
 	PUTRECT(A(2), r);
 	RET(0);
 }

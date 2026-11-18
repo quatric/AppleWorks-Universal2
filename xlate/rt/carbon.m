@@ -401,6 +401,9 @@ static void sh_GetThemeTextDimensions(PPC *c)
 		// one line: as the theme text calls draw and truncate it, so a label sized by this fits
 		extern int theme_text_metrics(int id, NSString *s, int *height, int *descent);
 		int h, d, w = theme_text_metrics((int16_t)A(1), str, &h, &d);
+		if (getenv("PPC_DBG_TTD"))
+			ppc_log("GetThemeTextDimensions '%s' font %d -> %d x %d (port %08x)", str.UTF8String, (int16_t)A(1), w, h,
+				qd_port ? qd_port->tok : 0);
 		if (w >= 0) {
 			if (A(4)) {
 				ST16(A(4), (uint16_t)(int16_t)h);

@@ -238,6 +238,19 @@ static int eff_visible(Ctl *c)
 	return 1;
 }
 
+// the window's control hierarchy, for the test script's "controls" command
+static void dump_tree(Ctl *c, int depth)
+{
+	for (; c; c = c->next) {
+		ppc_log("script: %*sctl %08x kind %d proc %d %d,%d,%d,%d vis %d eff %d val %d '%.*s'", depth * 2, "", c->h, c->kind,
+			c->procID, c->r.top, c->r.left, c->r.bottom, c->r.right, c->visible, eff_visible(c), c->value, c->title[0],
+			c->title + 1);
+		dump_tree(c->child, depth + 1);
+	}
+}
+
+void ctl_dump(Win *w) { dump_tree(ctl_root(w), 0); }
+
 static int eff_active(Ctl *c)
 {
 	for (; c; c = c->parent)
@@ -1025,11 +1038,30 @@ static void sh_GetRootControl(PPC *c)
 		ST32(A(1), w ? w->root : 0);
 	RET(w && w->root ? 0 : -30583);
 }
+// controls that can hold others (kControlSupportsEmbedding): the root, user panes, tabs, group
+// boxes, placards, window headers, radio groups, and custom definitions (which decide for
+// themselves); a button or scroll bar is not one, and EmbedControl into it fails
+static int is_embedder(Ctl *k)
+{
+	if (k->win && k->win->root == k->h)
+		return 1;
+	switch (k->kind) {
+	case K_USERPANE: case K_TABS: case K_GROUP: case K_PLACARD: case K_HEADER: case K_RADIOGROUP: case K_CUSTOM:
+	case K_NULL:
+		return 1;
+	}
+	return 0;
+}
+
 static void sh_EmbedControl(PPC *c)
 {
 	Ctl *k = C0, *p = CTL(A(1));
 	if (!k || !p) {
 		RET(-50);
+		return;
+	}
+	if (!is_embedder(p)) {
+		RET(-30590);   // errControlIsNotEmbedder: the control stays where it is
 		return;
 	}
 	remove_child(k);
@@ -1231,7 +1263,7 @@ static void sh_GetControlFeatures(PPC *c)
 	Ctl *k = C0;
 	uint32_t f = 0;
 	if (k) {
-		f = 0x2;   // kControlSupportsEmbedding... for containers
+		f = is_embedder(k) ? 0x2 : 0;   // kControlSupportsEmbedding
 		if (k->kind == K_EDITTEXT)
 			f |= 0x4 | 0x8 | 0x10;   // focus, idle, key events
 		if (k->kind == K_USERPANE)

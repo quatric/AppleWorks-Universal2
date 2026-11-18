@@ -49,6 +49,7 @@ Ctl *CTL(uint32_t h);
 void ctl_dispose_all(Win *w);
 void ctl_draw(Ctl *c);
 void ctl_draw_window(Win *w);
+void ctl_dump(Win *w);
 Ctl *ctl_create(Win *w, QRect r, const uint8_t *title, int visible, int value, int min, int max, int proc, uint32_t refCon);
 Ctl *ctl_find(Win *w, QPoint pt, int *part);
 int ctl_track(Ctl *k, QPoint pt, uint32_t action, uint16_t mods);

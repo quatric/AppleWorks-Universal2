@@ -28,6 +28,7 @@ typedef struct Port {
 	int txFont, txFace, txMode, txSize, spExtra;
 	uint32_t grafProcs;
 	struct Win *win;
+	struct Win *coord_win;   // not a window's own port, but its coordinates are (a frame drawn by its definition)
 	int gworld;
 	uint32_t pixmap;         // PixMapHandle (guest PixMap)
 	uint32_t pixmap_ptr;     // the PixMap itself, as GetPortBitMapForCopyBits returns

@@ -55,9 +55,24 @@ def main():
         'NSRequiresAquaSystemAppearance': True,
         'NSPrincipalClass': 'NSApplication',
     }
-    if icns:
+    # the application's icon: the one the original bundle names (src is its Contents/MacOS/<exe>);
+    # the executable's lowest icns resource otherwise (in AppleWorks that is a document's icon)
+    contents = os.path.dirname(os.path.dirname(src))
+    own = None
+    try:
+        with open(os.path.join(contents, 'Info.plist'), 'rb') as f:
+            named = plistlib.load(f).get('CFBundleIconFile')
+        if named:
+            path = os.path.join(contents, 'Resources', named if named.endswith('.icns') else named + '.icns')
+            if os.path.isfile(path):
+                own = open(path, 'rb').read()
+    except (OSError, plistlib.InvalidFileException):
+        pass
+    if own is None and icns:
         icns.sort()
-        open(os.path.join(app, 'Contents/Resources/AppIcon.icns'), 'wb').write(icns[0][1])
+        own = icns[0][1]
+    if own is not None:
+        open(os.path.join(app, 'Contents/Resources/AppIcon.icns'), 'wb').write(own)
         info['CFBundleIconFile'] = 'AppIcon'
     with open(os.path.join(app, 'Contents/Info.plist'), 'wb') as f:
         plistlib.dump(info, f)
