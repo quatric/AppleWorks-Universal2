@@ -17,7 +17,17 @@ void ppc_log(const char *fmt, ...)
 {
 	va_list ap;
 	va_start(ap, fmt);
-	fprintf(stderr, "[ppc] ");
+	static int stamp = -1;
+	if (stamp < 0)
+		stamp = getenv("PPC_LOG_TIME") != NULL;   // seconds since start before each line
+	if (stamp) {
+		static double t0;
+		double now = CFAbsoluteTimeGetCurrent();
+		if (!t0)
+			t0 = now;
+		fprintf(stderr, "[ppc %8.3f] ", now - t0);
+	} else
+		fprintf(stderr, "[ppc] ");
 	vfprintf(stderr, fmt, ap);
 	fputc('\n', stderr);
 	va_end(ap);

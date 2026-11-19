@@ -45,6 +45,8 @@ static XLWinDelegate *delegate;
 - (BOOL)acceptsFirstMouse:(NSEvent *)e { (void)e; return YES; }
 - (void)drawRect:(NSRect)dirty
 {
+	if (getenv("PPC_DBG_FLUSH"))
+		ppc_log("drawRect %.0f,%.0f %.0fx%.0f", dirty.origin.x, dirty.origin.y, dirty.size.width, dirty.size.height);
 	(void)dirty;
 	Port *p = win ? win->port : NULL;
 	if (!p || !p->pix)
@@ -273,8 +275,11 @@ static int is_floating(Win *w) { return w->wclass == 5 || w->wclass == 7 || w->w
 
 QPoint win_origin(Win *w) { return (QPoint){w->frame.top, w->frame.left}; }
 
+// r in the window port's local coordinates as they are now: kept in content coordinates, since the
+// app may move the port's origin (SetOrigin) to draw and move it back before the flush
 void win_dirty(Win *w, QRect r)
 {
+	r = rect_off(r, -w->port->portRect.left, -w->port->portRect.top);
 	w->dirty = w->has_dirty ? rect_union(w->dirty, r) : r;
 	w->has_dirty = 1;
 }
@@ -284,8 +289,11 @@ void win_flush(Win *w)
 	if (!w->has_dirty || !w->view)
 		return;
 	XLWinView *v = w->view;
-	QRect r = rect_off(w->dirty, -w->port->portRect.left, -w->port->portRect.top);
+	QRect r = w->dirty;   // content coordinates
 	[v setNeedsDisplayInRect:NSMakeRect(r.left, r.top, r.right - r.left, r.bottom - r.top)];
+	if (getenv("PPC_DBG_FLUSH"))
+		ppc_log("flush %08x %d,%d,%d,%d (dirty %d,%d,%d,%d portRect %d,%d port %08x)", w->tok, r.top, r.left, r.bottom, r.right,
+			w->dirty.top, w->dirty.left, w->dirty.bottom, w->dirty.right, w->port->portRect.top, w->port->portRect.left, w->port->tok);
 	w->has_dirty = 0;
 }
 
