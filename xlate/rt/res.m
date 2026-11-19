@@ -704,7 +704,15 @@ static void sh_GetIndString(PPC *c)
 		ppc_log("GetIndString %d/%d '%.*s' lr %08x", (int16_t)A(1), idx, LD8(p), (const char *)G(p + 1), c->lr);
 }
 static void sh_GetPicture(PPC *c) { RET(res_get('PICT', (int16_t)A(0), 0)); }
-static void sh_GetCursor(PPC *c) { RET(res_get('CURS', (int16_t)A(0), 0)); }
+static void sh_GetCursor(PPC *c)
+{
+	const char *bt = getenv("PPC_DBG_CURSOR");   // a backtrace when the app loads that cursor
+	if (bt && atoi(bt) == (int16_t)A(0)) {
+		ppc_log("GetCursor %d", (int16_t)A(0));
+		ppc_backtrace(c);
+	}
+	RET(res_get('CURS', (int16_t)A(0), 0));
+}
 static void sh_GetIntlResource(PPC *c) { RET(res_get(A(0) == 0 ? 'itl0' : A(0) == 1 ? 'itl1' : A(0) == 2 ? 'itl2' : 'itl4', 0, 0)); }
 
 static const ShimDef resshims[] = {

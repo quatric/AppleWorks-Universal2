@@ -322,7 +322,10 @@ static void sh_PaintOne(PPC *c)
 static void sh_SetControlProperty(PPC *c) { RET(0); }
 static void sh_NewCollection(PPC *c) { RET(gcalloc(16)); }
 static void sh_FindNextComponent(PPC *c) { RET(0); }
-static void sh_ICStart(PPC *c) { if (A(0)) ST32(A(0), 0); RET(-108); }   // no Internet Config: memFullErr like a failed open
+// ICStart(ICInstance *, creator): an instance whose preferences are all unset (ICGetPref answers
+// icPrefNotFoundErr) and whose ICLaunchURL opens the user's browser; AppleWorks follows a link
+// only after it starts Internet Config, and says "Your Internet preferences could not be found" if it can't
+static void sh_ICStart(PPC *c) { if (A(0)) ST32(A(0), 0x49434930u); RET(0); }   // 'ICI0
 static void sh_AEInstallCoercionHandler(PPC *c) { RET(0); }
 static void sh_InitDateCache(PPC *c) { RET(0); }
 static void sh_LMGetApFontID(PPC *c) { RET(1); }   // applFont: Geneva

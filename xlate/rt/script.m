@@ -3,6 +3,7 @@
 // PPC_SCRIPT="t:cmd;t:cmd;..." with t seconds after start and cmd one of
 //   click x y [mods]    a click at window-local x, y of the front window
 //   wclick Title x y [mods]  a click at content-local x, y of the window titled Title... (_ for spaces)
+//   qclick Title x y [mods]  wclick with the release already queued behind the press
 //   down x y / move x y / up    a press, drag and release (down and move also take a
 //                       window title first, as wclick does)
 //   key c [mods]        a key (c a character, or a name: return tab esc left right up down del)
@@ -10,6 +11,7 @@
 //   shot file [Title]   the front window's (or the titled window's) pixels as a PNG
 //   menu id item        a menu choice
 //   windows             log every window
+//   ftrace on|off       log every translated function entered (as PPC_TRACE=1) from here on, or stop
 //   dump addr len       log len bytes of guest memory from hex addr
 //   quit
 // mods: any of cmd shift opt ctrl, joined with +
@@ -172,6 +174,9 @@ static void run(const char *cmd)
 	sscanf(cmd, "%31s %199s %31s %63s", op, a, b, m);
 	if (ppc_verbose)
 		ppc_log("script: %s", cmd);
+	int quick = !strcmp(op, "qclick");
+	if (quick)
+		op[0] = 'w';
 	if (!strcmp(op, "click") || !strcmp(op, "down") || !strcmp(op, "wclick")) {
 		fake = 1;
 		if (op[0] == 'd' && !(a[0] == '-' || (a[0] >= '0' && a[0] <= '9'))) {
@@ -194,7 +199,10 @@ static void run(const char *cmd)
 			fake_pos = global_of(atoi(a), atoi(b));
 		fake_down = 1;
 		mouse(1, fake_pos, mods_of(m));
-		if (strcmp(op, "down")) {
+		if (quick) {
+			fake_down = 0;
+			mouse(2, fake_pos, 0);
+		} else if (strcmp(op, "down")) {
 			// released at the next step of the pump
 			fake_down = 2;
 		}
@@ -267,6 +275,9 @@ static void run(const char *cmd)
 		Win *w = titled(a);
 		if (w)
 			ctl_dump(w);
+	} else if (!strcmp(op, "ftrace")) {
+		extern int ppc_trace_on;
+		ppc_trace_on = !strcmp(a, "on");
 	} else if (!strcmp(op, "dump")) {
 		uint32_t at = (uint32_t)strtoul(a, NULL, 16);
 		int n = atoi(b);

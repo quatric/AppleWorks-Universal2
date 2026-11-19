@@ -139,6 +139,10 @@ static void mirror_answer(Ep *e)
 	if (![method isEqualToString:@"GET"] && ![method isEqualToString:@"HEAD"]) {
 		[h appendString:@"HTTP/1.0 501 Not Implemented\r\n"];
 		body = [@"Not implemented\n" dataUsingEncoding:NSASCIIStringEncoding];
+	} else if (!ok && [path hasSuffix:@"6-1.cwk.gz"]) {
+		// a Starting Points Web tab item with no surviving copy (Extras): "not modified", so the app
+		// keeps its placeholder instead of alerting "Unable to locate the requested item" at every visit
+		[h appendString:@"HTTP/1.0 304 Not Modified\r\n"];
 	} else if (!ok) {
 		[h appendString:@"HTTP/1.0 404 Not Found\r\n"];
 		body = [@"<HTML><BODY>Not found</BODY></HTML>\n" dataUsingEncoding:NSASCIIStringEncoding];

@@ -42,7 +42,10 @@ uint16_t ev_mac_modifiers(NSEventModifierFlags f)
 
 uint16_t ev_modifiers(void)
 {
-	uint16_t m = ev_mac_modifiers(NSEvent.modifierFlags);
+	static int scripted = -1;
+	if (scripted < 0)
+		scripted = getenv("PPC_SCRIPT") != NULL;
+	uint16_t m = scripted ? 0 : ev_mac_modifiers(NSEvent.modifierFlags);   // a script's keys come with its events
 	if (!ev_button_down())
 		m |= 0x80;   // btnState: the button is up
 	return m;
@@ -300,7 +303,7 @@ static int get_event(uint16_t mask, uint32_t evp, double wait)
 			ev_last = e;
 			write_event(evp, &e);
 			if (ppc_verbose && e.what != 6)
-				ppc_log("event %d message %08x", e.what, e.message);
+				ppc_log("event %d message %08x where %d,%d mods %04x", e.what, e.message, e.where.h, e.where.v, e.modifiers);
 			return 1;
 		}
 		double left = deadline - CFAbsoluteTimeGetCurrent();
@@ -534,7 +537,12 @@ static void sh_EventAvail(PPC *c)
 static void sh_GetKeys(PPC *c)
 {
 	uint8_t km[16] = {0};
-	for (int k = 0; k < 128; k++)
+	// a scripted run never reads the real keyboard (as it never reads the real mouse): keys the
+	// user holds while typing elsewhere would turn scripted clicks into shift- or option-clicks
+	static int scripted = -1;
+	if (scripted < 0)
+		scripted = getenv("PPC_SCRIPT") != NULL;
+	for (int k = 0; k < 128 && !scripted; k++)
 		if (CGEventSourceKeyState(kCGEventSourceStateCombinedSessionState, (CGKeyCode)k))
 			km[k >> 3] |= 1 << (k & 7);
 	memcpy(G(A(0)), km, 16);

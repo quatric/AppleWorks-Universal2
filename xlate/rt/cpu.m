@@ -144,6 +144,7 @@ uint32_t ppc_host_tvec(Shim fn)
 
 static int depth;
 static int trace_calls;
+static const char *bt_import;
 
 // PPC_WATCH=address: logs the toolbox call after which the six bytes there changed
 static uint32_t watch_addr;
@@ -164,6 +165,11 @@ void ppc_call(PPC *c, uint32_t code)
 		if (i < ppc_nimports) {
 			if (trace_calls)
 				ppc_log("%*s-> %s(%08x, %08x, %08x, %08x)", depth, "", ppc_import_names[i], c->r[3], c->r[4], c->r[5], c->r[6]);
+			if (bt_import && !strcmp(bt_import, ppc_import_names[i])) {
+				// PPC_BT=Name: a backtrace at each call of that import
+				ppc_log("%s(%08x, %08x, %08x, %08x)", ppc_import_names[i], c->r[3], c->r[4], c->r[5], c->r[6]);
+				ppc_backtrace(c);
+			}
 			if (import_fns[i])
 				import_fns[i](c);
 			else
@@ -481,6 +487,7 @@ void ppc_start(const char *rsrc_path)
 	ppc_trace_on = getenv("PPC_TRACE") != NULL;
 	v = getenv("PPC_CALLS");
 	trace_calls = v ? atoi(v) : 0;
+	bt_import = getenv("PPC_BT");
 	v = getenv("PPC_WATCH");
 	watch_addr = v ? (uint32_t)strtoul(v, NULL, 16) : 0;
 	XG = mmap(NULL, 1ull << 32, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_NORESERVE, -1, 0);
