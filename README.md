@@ -1,5 +1,7 @@
 # AppleWorks 6 Universal
 
+Version 6.2.9-2-U2B (see `VERSION`).
+
 AppleWorks 6.2.9 for Mac OS X, running natively on Apple silicon and Intel Macs.
 
 AppleWorks 6 is a PowerPC Carbon (CFM) application. This project translates its
@@ -36,8 +38,8 @@ Requirements: macOS with the Xcode command-line tools, and Python 3.
 
        xlate/build.sh
 
-4. Optionally, package `dist/AppleWorks_6.2.9-U2B.dmg` (needs a Python with
-   `machfs`, passed as `PY`):
+4. Optionally, package `dist/AppleWorks_<version>.dmg`, named from `VERSION`
+   (needs a Python with `machfs`, passed as `PY`):
 
        PY=/path/to/python tools/mkdmg.sh
 

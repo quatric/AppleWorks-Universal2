@@ -6,6 +6,7 @@ usage: mkinfo.py <original file> <executable name> <display name> <bundle>
 """
 import os
 import plistlib
+import re
 import struct
 import sys
 
@@ -35,6 +36,12 @@ def main():
     if v:
         sl = v[6]
         version = v[7:7 + sl].decode('mac_roman')
+    # this port's release (VERSION at the top of the repository: the original's version, the port's
+    # release number, the architectures), shown as the version; the build number stays numeric
+    port = None
+    vf = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'VERSION')
+    if os.path.isfile(vf):
+        port = open(vf).read().strip() or None
     creator = 'WBwz'
     for (t, rid), data in r.items():
         if t == b'BNDL':
@@ -47,9 +54,9 @@ def main():
         'CFBundleIdentifier': 'com.worldbook.' + exe.lower(),
         'CFBundlePackageType': 'APPL',
         'CFBundleSignature': creator,
-        'CFBundleShortVersionString': version.split(' ')[0],
-        'CFBundleVersion': version.split(' ')[0],
-        'CFBundleGetInfoString': version,
+        'CFBundleShortVersionString': port or version.split(' ')[0],
+        'CFBundleVersion': '.'.join(re.findall(r'\d+', port)[:4]) if port else version.split(' ')[0],
+        'CFBundleGetInfoString': port or version,
         'LSMinimumSystemVersion': '11.0',
         'NSHighResolutionCapable': True,
         'NSRequiresAquaSystemAppearance': True,

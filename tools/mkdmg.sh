@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds dist/AppleWorks_6.2.9-U2B.dmg (arm64 + x86_64) from game/ (tools/install.sh)
+# Builds dist/AppleWorks_<VERSION>.dmg (arm64 + x86_64) from game/ (tools/install.sh)
 # and build/AppleWorks 6.app (xlate/build.sh): the "AppleWorks 6" folder with the
 # translated application in place of the original, and the CD's documentation.
 # usage: tools/mkdmg.sh   (PY: a Python with machfs)
@@ -23,6 +23,7 @@ lipo -archs "$S/AppleWorks 6/AppleWorks 6.app/Contents/MacOS/AppleWorks" | grep 
 	&& lipo -archs "$S/AppleWorks 6/AppleWorks 6.app/Contents/MacOS/AppleWorks" | grep -q x86_64
 cp "build/AppleWorks 6.app/Contents/Resources/AppIcon.icns" $S/.VolumeIcon.icns
 SetFile -a C $S
-mkdir -p dist; rm -f dist/AppleWorks_6.2.9-U2B.dmg
-hdiutil create -volname "AppleWorks 6.2.9" -srcfolder $S -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov dist/AppleWorks_6.2.9-U2B.dmg
+V=$(cat VERSION)
+mkdir -p dist; rm -f "dist/AppleWorks_$V.dmg"
+hdiutil create -volname "AppleWorks $V" -srcfolder $S -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "dist/AppleWorks_$V.dmg"
 rm -rf $S
