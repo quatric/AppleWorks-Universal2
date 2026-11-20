@@ -881,6 +881,8 @@ static void sh_ModalDialog(PPC *c)
 		}
 	}
 	uint32_t ev = gcalloc(16);
+	menu_modal(1);
+	ev_drop_menu_events();
 	for (;;) {
 		SHIM_CALL("WaitNextEvent", 0xffff, ev, 2, 0);
 		uint16_t what = LD16(ev);
@@ -910,6 +912,8 @@ static void sh_ModalDialog(PPC *c)
 			break;
 		}
 	}
+	menu_modal(-1);
+	ev_drop_menu_events();
 	gfree(ev);
 }
 

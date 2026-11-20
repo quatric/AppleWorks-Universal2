@@ -70,5 +70,7 @@ uint16_t ev_mac_modifiers(NSEventModifierFlags f);
 // menus (menu.m)
 void menu_bar_install(void);
 int menu_key(uint8_t ch, uint16_t mods);
+void menu_modal(int delta);          // a ModalDialog loop begins (+1) or ends (-1): the bar offers only Edit
+void ev_drop_menu_events(void);      // forget queued menu-bar choices
 
 #endif

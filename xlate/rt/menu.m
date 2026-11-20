@@ -202,6 +202,38 @@ uint32_t menu_get_handle(int16_t id)
 
 static Menu *by_id(int16_t id) { return M(menu_get_handle(id)); }
 
+// While the guest is in ModalDialog its menu bar is not its own: only the Edit commands work, and
+// they act on the dialog's text. Anything else a user could choose would start work behind the dialog.
+static int modal_depth;
+static int in_bar;   // building the menu bar (a pop-up menu in a dialog keeps what the guest enabled)
+
+static int is_edit_cmd(const Item *it)
+{
+	int c = toupper(it->cmd);
+	return c == 'X' || c == 'C' || c == 'V' || c == 'A';
+}
+
+static int is_edit_menu(const Menu *m)
+{
+	int x = 0, v = 0;
+	for (int i = 0; i < m->n; i++) {
+		int c = toupper(m->items[i].cmd);
+		x |= c == 'X';
+		v |= c == 'V';
+	}
+	return x && v;
+}
+
+void menu_modal(int delta)
+{
+	int was = modal_depth > 0;
+	modal_depth += delta;
+	if (modal_depth < 0)
+		modal_depth = 0;
+	if ((modal_depth > 0) != was)
+		dirty = 1;
+}
+
 int menu_count(uint32_t h) { Menu *m = M(h); return m ? m->n : 0; }
 int16_t menu_id(uint32_t h) { Menu *m = M(h); return m ? m->id : 0; }
 
@@ -232,6 +264,21 @@ static int16_t apple_id;   // the Apple menu, folded into the application menu
 	uint32_t data = (uint32_t)it.tag;
 	if (in_popup) {
 		popup_choice = (int)(data & 0xffff);
+		return;
+	}
+	if (modal_depth > 0) {
+		Menu *m = by_id((int16_t)(data >> 16));
+		int i = (int)(data & 0xffff) - 1;
+		if (m && i >= 0 && i < m->n && is_edit_menu(m) && is_edit_cmd(&m->items[i])) {
+			// Cut, Copy, Paste, Select All reach the dialog as the command keys
+			Ev k = {0};
+			k.what = 3;
+			k.message = (uint32_t)tolower(m->items[i].cmd);
+			k.where = ev_mouse_global();
+			k.modifiers = 0x100 | 0x80;
+			ev_post(k);
+		} else
+			NSBeep();
 		return;
 	}
 	ev_post_mouse_part(NULL, 1, data);
@@ -275,6 +322,8 @@ static NSMenuItem *build_item(Menu *m, int i, int depth)
 	ni.target = target;
 	ni.tag = (NSInteger)((uint32_t)(uint16_t)m->id << 16 | (uint32_t)(i + 1));
 	ni.enabled = m->enabled && it->enabled;
+	if (in_bar && modal_depth > 0)
+		ni.enabled = ni.enabled && is_edit_menu(m) && is_edit_cmd(it);
 	if (it->cmd == 0x1b) {
 		Menu *sub = by_id(it->sub ? it->sub : it->mark);
 		if (sub && depth < 4)
@@ -341,6 +390,7 @@ void menu_flush(void)
 	dirty = 0;
 	if (!target)
 		target = [XLMenuTarget new];
+	in_bar = 1;
 	NSMenu *main = [[NSMenu alloc] initWithTitle:@"Main"];
 	main.autoenablesItems = NO;
 	NSString *app = NSProcessInfo.processInfo.processName;
@@ -385,9 +435,10 @@ void menu_flush(void)
 		NSMenu *nm = build(m, 0);
 		NSMenuItem *top = [[NSMenuItem alloc] initWithTitle:nm.title action:NULL keyEquivalent:@""];
 		top.submenu = nm;
-		top.enabled = m->enabled;
+		top.enabled = m->enabled && (modal_depth == 0 || is_edit_menu(m));
 		[main addItem:top];
 	}
+	in_bar = 0;
 	NSApp.mainMenu = main;
 }
 

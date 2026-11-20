@@ -84,6 +84,17 @@ void ev_post(Ev e)
 	qn++;
 }
 
+// menu choices made while a dialog was up, or just before it was: they must not open another one
+void ev_drop_menu_events(void)
+{
+	for (int i = 0; i < qn; i++) {
+		Ev *q = &queue[(qhead + i) % 256];
+		if (q->what == 1 && q->part == 1 && !q->win) {
+			q->what = 0xffff;
+		}
+	}
+}
+
 // after a host-side tracking loop: the button was released there
 void ev_drop_mouseups(void)
 {
