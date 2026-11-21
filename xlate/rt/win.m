@@ -416,6 +416,14 @@ static void ns_title(Win *w)
 {
 	NSString *t = mac_ns(w->title + 1, w->title[0]);
 	((NSWindow *)w->ns).title = t;
+	// the Tools palette has a layout of its own that cannot follow a stretched window; its title comes after
+	// the window is made
+	if (w->title[0] == 5 && !memcmp(w->title + 1, "Tools", 5)) {
+		NSWindow *nw = w->ns;
+		nw.styleMask &= ~NSWindowStyleMaskResizable;
+		if (ppc_verbose)
+			ppc_log("Tools window: resizable %d", (int)((nw.styleMask & NSWindowStyleMaskResizable) != 0));
+	}
 }
 
 // ---- custom window definitions (CreateCustomWindow) -----------------------------------------------
