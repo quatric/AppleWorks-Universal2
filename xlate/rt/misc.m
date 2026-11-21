@@ -718,3 +718,72 @@ static const ShimDef miscshims[] = {
 	{"NewDragReceiveHandlerUPP", sh_nop}, {"NewDragTrackingHandlerUPP", sh_nop},
 };
 REGISTER(miscshims)
+
+// ---- Text Encoding Converter: Mac Roman text to UTF-16 (the only encoding the application asks for) -----
+
+static void sh_UpgradeScriptInfoToTextEncoding(PPC *c)
+{
+	// (script, language, region, font name, TextEncoding *): Mac Roman
+	if (A(4))
+		ST32(A(4), 0);
+	RET(0);
+}
+static void sh_GetApplicationTextEncoding(PPC *c) { RET(0); }
+static void sh_CreateTextToUnicodeInfo(PPC *c)
+{
+	// (UnicodeMapping *, TextToUnicodeInfo *)
+	if (A(1))
+		ST32(A(1), gcalloc(8));
+	RET(0);
+}
+static void sh_CreateTextToUnicodeInfoByEncoding(PPC *c)
+{
+	// (TextEncoding, TextToUnicodeInfo *)
+	if (A(1))
+		ST32(A(1), gcalloc(8));
+	RET(0);
+}
+static void sh_DisposeTextToUnicodeInfo(PPC *c)
+{
+	if (A(0) && LD32(A(0)))
+		gfree(LD32(A(0)));
+	RET(0);
+}
+static void sh_ConvertFromTextToUnicode(PPC *c)
+{
+	// (info, srcLen, src, flags, offsetCount, offsets, *oOffsetCount, oOffsets, outBufLen, *srcRead, *unicodeLen, unicode)
+	uint32_t n = A(1), src = A(2), outlen = A(8), pread = A(9), plen = A(10), out = A(11);
+	NSString *s = [[NSString alloc] initWithBytes:G(src) length:n encoding:NSMacOSRomanStringEncoding];
+	uint32_t units = 0;
+	uint32_t used = 0;
+	for (NSUInteger i = 0; i < s.length && (units + 1) * 2 <= outlen; i++) {
+		unichar u = [s characterAtIndex:i];
+		ST16(out + units * 2, u);
+		units++;
+		used = (uint32_t)(i + 1);
+	}
+	if (pread)
+		ST32(pread, used < n ? used : n);
+	if (plen)
+		ST32(plen, units * 2);
+	[s release];
+	RET(0);
+}
+static const ShimDef tecshims[] = {
+	S(UpgradeScriptInfoToTextEncoding), S(GetApplicationTextEncoding), S(CreateTextToUnicodeInfo),
+	S(CreateTextToUnicodeInfoByEncoding), S(DisposeTextToUnicodeInfo), S(ConvertFromTextToUnicode),
+};
+REGISTER(tecshims)
+
+static void sh_CharacterByteType(PPC *c) { RET(0); }   // smSingleByteCharacter
+static void sh_FSResolveAliasFileWithMountFlags(PPC *c)
+{
+	// (FSRef *, resolveAliasChains, Boolean *targetIsFolder, Boolean *wasAliased, mountFlags): not an alias
+	if (A(2))
+		ST8(A(2), 0);
+	if (A(3))
+		ST8(A(3), 0);
+	RET(0);
+}
+static const ShimDef tec2shims[] = { S(CharacterByteType), S(FSResolveAliasFileWithMountFlags) };
+REGISTER(tec2shims)
