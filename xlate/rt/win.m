@@ -614,7 +614,9 @@ static Win *win_create(int wclass, uint32_t attrs, QRect bounds, const uint8_t *
 	if (style != NSWindowStyleMaskBorderless) {
 		if (attrs & 1)
 			style |= NSWindowStyleMaskClosable;
-		if (attrs & 0x10)
+		// the Tools palette has a layout of its own that cannot follow a stretched window
+		int fixed = title && title[0] == 5 && !memcmp(title + 1, "Tools", 5);
+		if ((attrs & 0x10) && !fixed)
 			style |= NSWindowStyleMaskResizable;
 		if (!(attrs & 8) && wclass == 6)
 			style &= ~NSWindowStyleMaskMiniaturizable;
