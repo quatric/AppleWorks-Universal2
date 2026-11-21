@@ -260,6 +260,12 @@ static void run(const char *cmd)
 		e.part = 1;
 		e.data = (uint32_t)(uint16_t)atoi(a) << 16 | (uint16_t)atoi(b);
 		ev_post(e);
+	} else if (!strcmp(op, "probe")) {
+		extern void menu_probe(int16_t, int);
+		menu_probe((int16_t)atoi(a), atoi(b));
+	} else if (!strcmp(op, "cell")) {
+		extern void menu_custom_click(int16_t, int, int);
+		menu_custom_click((int16_t)atoi(a), atoi(b), atoi(m));
 	} else if (!strcmp(op, "menus")) {
 		extern void menu_dump(void);
 		menu_dump();

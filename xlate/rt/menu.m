@@ -6,6 +6,7 @@
 // keys the menus do not take reach the guest as key-downs for MenuKey.
 #import <AppKit/AppKit.h>
 #include "menu.h"
+#include "qd.h"
 #include "hmap.h"
 
 const uint8_t *res_bytes(uint32_t type, int16_t id, uint32_t *len);
@@ -29,6 +30,8 @@ typedef struct Menu {
 	int enabled;
 	int inserted;          // 1 menu bar, -1 hierarchical
 	int16_t res_id;        // loaded from this MENU resource
+	int wid, hgt;          // SetMenuWidth / SetMenuHeight (0: not set)
+	uint32_t def;          // a custom definition's procedure (transition vector), 0 for an ordinary menu
 } Menu;
 
 static HMap menus;           // MenuHandle -> Menu
@@ -52,8 +55,8 @@ static void msync_(Menu *m)
 		HSetSize(m->h, 14 + 256);
 	uint32_t p = HP(m->h);
 	ST16(p, m->id);
-	ST16(p + 2, 200);
-	ST16(p + 4, (uint16_t)(m->n * 18));
+	ST16(p + 2, (uint16_t)(m->wid ? m->wid : 200));
+	ST16(p + 4, (uint16_t)(m->hgt ? m->hgt : m->n * 18));
 	ST32(p + 6, 0);
 	uint32_t f = m->enabled ? 1 : 0;
 	for (int i = 0; i < m->n && i < 31; i++)
@@ -152,6 +155,8 @@ uint32_t menu_load(int16_t id)
 	int16_t mid = (int16_t)(d[0] << 8 | d[1]);
 	Menu *m = menu_new(mid, d + 14);
 	m->res_id = id;
+	if (getenv("PPC_DBG_MENU") && (d[6] | d[7] | d[8] | d[9]))
+		ppc_log("menu res %d has a menu definition (MDEF) %02x%02x%02x%02x", id, d[6], d[7], d[8], d[9]);
 	uint32_t enable = (uint32_t)d[10] << 24 | d[11] << 16 | d[12] << 8 | d[13];
 	m->enabled = enable & 1;
 	uint32_t o = 14 + d[14] + 1;
@@ -379,8 +384,105 @@ static NSMenuItem *build_item(Menu *m, int i, int depth)
 	return ni;
 }
 
+
+// ---- custom menus: the guest's own drawing and hit testing inside a Cocoa menu --------------------------
+static CGImageRef custom_image(Menu *m, int hilite);
+static void custom_size(Menu *m, int *w, int *h);
+static uint32_t def_call(Menu *m, int msg, uint32_t rect, QPoint hit, uint32_t which);
+static void ensure_cells(Menu *m);
+static int custom_item_at(Menu *m, int x, int y);
+
+@interface XLCustomView : NSView {
+	Menu *menu;
+	CGImageRef image;
+	NSPoint hot;
+}
+- (instancetype)initWithMenu:(Menu *)m;
+@end
+
+@implementation XLCustomView
+- (instancetype)initWithMenu:(Menu *)m
+{
+	int w, h;
+	custom_size(m, &w, &h);
+	self = [super initWithFrame:NSMakeRect(0, 0, w, h)];
+	menu = m;
+	hot = NSMakePoint(-1, -1);
+	image = custom_image(m, 0);
+	[self addTrackingArea:[[NSTrackingArea alloc] initWithRect:NSZeroRect
+		options:NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited | NSTrackingActiveAlways | NSTrackingInVisibleRect owner:self userInfo:nil]];
+	return self;
+}
+- (void)dealloc
+{
+	if (image)
+		CGImageRelease(image);
+}
+- (BOOL)isFlipped { return YES; }
+- (BOOL)acceptsFirstMouse:(NSEvent *)e { (void)e; return YES; }
+- (void)drawRect:(NSRect)r
+{
+	(void)r;
+	CGContextRef cg = NSGraphicsContext.currentContext.CGContext;
+	if (image) {
+		CGContextSaveGState(cg);
+		CGContextTranslateCTM(cg, 0, self.bounds.size.height);
+		CGContextScaleCTM(cg, 1, -1);
+		CGContextDrawImage(cg, CGRectMake(0, 0, CGImageGetWidth(image), CGImageGetHeight(image)), image);
+		CGContextRestoreGState(cg);
+	}
+	if (hot.x >= 0 && menu->n == 256) {   // a palette: the cell under the pointer is outlined
+		int c = (int)((hot.x - 1) / 13), rw = (int)((hot.y - 1) / 13);
+		if (c >= 0 && c < 16 && rw >= 0 && rw < 16) {
+			NSRect cell = NSMakeRect(1 + c * 13, 1 + rw * 13, 13, 13);
+			[[NSColor blackColor] set];
+			NSFrameRectWithWidth(cell, 2);
+			[[NSColor whiteColor] set];
+			NSFrameRectWithWidth(NSInsetRect(cell, 2, 2), 1);
+		}
+	}
+}
+- (void)mouseEntered:(NSEvent *)e { [self mouseMoved:e]; }
+- (void)mouseMoved:(NSEvent *)e
+{
+	hot = [self convertPoint:e.locationInWindow fromView:nil];
+	[self setNeedsDisplay:YES];
+}
+- (void)mouseExited:(NSEvent *)e
+{
+	(void)e;
+	hot = NSMakePoint(-1, -1);
+	[self setNeedsDisplay:YES];
+}
+- (void)mouseUp:(NSEvent *)e
+{
+	NSPoint p = [self convertPoint:e.locationInWindow fromView:nil];
+	int item = custom_item_at(menu, (int)p.x, (int)p.y);
+	if (item > 0) {
+		NSMenuItem *fake = [[NSMenuItem alloc] init];
+		fake.tag = (NSInteger)((uint32_t)(uint16_t)menu->id << 16 | (uint32_t)item);
+		[target choose:fake];
+	}
+	for (NSMenu *m = self.enclosingMenuItem.menu; m; m = m.supermenu)
+		[m cancelTracking];
+}
+@end
+
+static NSMenu *build_custom(Menu *m)
+{
+	ensure_cells(m);
+	NSMenu *nm = [[NSMenu alloc] initWithTitle:item_title(m->title)];
+	nm.autoenablesItems = NO;
+	NSMenuItem *it = [[NSMenuItem alloc] init];
+	it.view = [[XLCustomView alloc] initWithMenu:m];
+	[nm addItem:it];
+	return nm;
+}
+
 static NSMenu *build(Menu *m, int depth)
 {
+	if (m->def)
+		return build_custom(m);
 	NSMenu *nm = [[NSMenu alloc] initWithTitle:item_title(m->title)];
 	nm.autoenablesItems = NO;
 	for (int i = 0; i < m->n; i++)
@@ -795,6 +897,9 @@ static void sh_CreateCustomMenu(PPC *c)
 {
 	static const uint8_t empty[1] = {0};
 	Menu *m = menu_new((int16_t)A(1), empty);
+	m->def = LD32(A(0) + 4);
+	if (getenv("PPC_DBG_MENU"))
+		ppc_log("CreateCustomMenu id %d spec %08x %08x attrs %08x from %s", (int16_t)A(1), LD32(A(0)), LD32(A(0) + 4), A(2), ppc_func_name(c->lr - 4));
 	if (A(3))
 		ST32(A(3), m->h);
 	RET(0);
@@ -965,7 +1070,47 @@ static void sh_HMGetHelpMenu(PPC *c)
 static void sh_SetMenuTitle(PPC *c) { Menu *m = M(A(0)); if (m) { memcpy(m->title, G(A(1)), LD8(A(1)) + 1); msync_(m); } }
 static void sh_CalcMenuSize(PPC *c) { (void)c; }
 
+static void sh_SetMenuWidth(PPC *c) { Menu *m = M(A(0)); if (m) { m->wid = (int16_t)A(1); msync_(m); } }
+static void sh_SetMenuHeight(PPC *c) { Menu *m = M(A(0)); if (m) { m->hgt = (int16_t)A(1); msync_(m); } }
+static void sh_GetMenuWidth(PPC *c) { Menu *m = M(A(0)); RET(m && m->wid ? m->wid : 200); }
+static void sh_GetMenuHeight(PPC *c) { Menu *m = M(A(0)); RET(m && m->hgt ? m->hgt : m ? m->n * 18 : 0); }
+static void sh_SetPt(PPC *c) { ST16(A(0), (uint16_t)A(2)); ST16(A(0) + 2, (uint16_t)A(1)); }
+static void sh_GetMenuTitle(PPC *c) { Menu *m = M(A(0)); if (m && A(1)) memcpy(G(A(1)), m->title, m->title[0] + 1); RET(0); }
+
+// the parts of a custom menu definition's drawing that come from the theme
+static void theme_fill(QRect r, double gray)
+{
+	Port *p = qd_port;
+	if (!p)
+		return;
+	CGContextRef cg = qd_cg_begin(p);
+	CGContextSetGrayFillColor(cg, gray, 1);
+	CGContextFillRect(cg, CGRectMake(r.left, r.top, r.right - r.left, r.bottom - r.top));
+	qd_cg_end(p);
+	qd_dirty(p, r);
+}
+static void sh_DrawThemeMenuBackground(PPC *c) { theme_fill(RECT(A(0)), 0.97); RET(0); }
+static void sh_DrawThemeMenuItem(PPC *c)
+{
+	// DrawThemeMenuItem(menuRect, itemRect, ...state in r7): a chosen item is highlighted
+	if (A(4) >= 0 && (A(4) & 0xffff) >= 1 && (A(4) & 0xffff) <= 3 && ((A(4) & 0xffff) == 2 || (A(4) & 0xffff) == 3))
+		theme_fill(RECT(A(1)), 0.75);
+	else
+		theme_fill(RECT(A(1)), 0.97);
+	RET(0);
+}
+static void sh_DrawThemeMenuSeparator(PPC *c)
+{
+	QRect r = RECT(A(0));
+	r.top = (int16_t)((r.top + r.bottom) / 2);
+	r.bottom = (int16_t)(r.top + 1);
+	theme_fill(r, 0.7);
+	RET(0);
+}
+
 static const ShimDef menushims[] = {
+	S(SetMenuWidth), S(SetMenuHeight), S(GetMenuWidth), S(GetMenuHeight), S(SetPt), S(GetMenuTitle),
+	S(DrawThemeMenuBackground), S(DrawThemeMenuItem), S(DrawThemeMenuSeparator),
 	S(GetMenu), S(NewMenu), S(GetMenuHandle), S(GetMCEntry), S(GetMenuID), S(InsertMenu), S(DeleteMenu), S(DisposeMenu),
 	S(GetMenuBar), S(SetMenuBar), S(DrawMenuBar), S(InvalMenuBar), S(HiliteMenu), S(FlashMenuBar), S(GetMBarHeight), S(ClearMenuBar),
 	S(AppendMenu), S(InsertMenuItem), S(DeleteMenuItem), S(CountMenuItems), S(AppendResMenu), S(InsertResMenu),
@@ -991,11 +1136,154 @@ int menu_item_enabled(uint32_t menu, int item)
 // debugging: the menu bar's menus and items, to the log
 void menu_dump(void)
 {
-	for (int i = 0; i < nbar; i++) {
-		Menu *m = bar[i];
+	for (int i = 0; i < nbar + nhier; i++) {
+		Menu *m = i < nbar ? bar[i] : hier[i - nbar];
 		ppc_log("menu %d '%.*s'", m->id, m->title[0], m->title + 1);
-		for (int k = 0; k < m->n; k++)
+		for (int k = 0; k < m->n; k++) {
 			ppc_log("  item %d '%.*s' %s cmd '%c'%s", k + 1, m->items[k].text[0], m->items[k].text + 1,
-				m->items[k].enabled ? "on" : "off", m->items[k].cmd >= 32 ? m->items[k].cmd : ' ', m->items[k].sub ? " submenu" : "");
+				m->items[k].enabled ? "on" : "off", m->items[k].cmd >= 32 ? m->items[k].cmd : ' ', m->items[k].cmd == 0x1b ? " submenu" : "");
+			if (m->items[k].cmd == 0x1b)
+				ppc_log("    -> sub %d mark %d", m->items[k].sub, m->items[k].mark);
+		}
+		if (m->n == 0)
+			ppc_log("  (no items; menu res %d)", m->res_id);
 	}
+}
+
+uint32_t ppc_callback(uint32_t tvec, int n, const uint32_t *args);
+uint32_t ppc_callback(uint32_t tvec, int n, const uint32_t *args);
+// A custom menu definition draws itself (the palettes of the Text Color and Fill menus): its drawing,
+// made with the guest's own code into a port of its own, shown as the contents of the Cocoa menu.
+// Messages: draw 0, size 2, find item 10, highlight item 11.
+static uint32_t def_call(Menu *m, int msg, uint32_t rect, QPoint hit, uint32_t which)
+{
+	uint32_t a[5] = {(uint32_t)msg, m->h, rect, (uint32_t)(uint16_t)hit.v << 16 | (uint16_t)hit.h, which};
+	return ppc_callback(m->def, 5, a);
+}
+
+static void custom_size(Menu *m, int *w, int *h)
+{
+	if (!m->wid || !m->hgt) {
+		uint32_t rect = gcalloc(16), which = gcalloc(4);
+		def_call(m, 2, rect, (QPoint){0, 0}, which);
+		gfree(rect);
+		gfree(which);
+	}
+	*w = m->wid ? m->wid : 100;
+	*h = m->hgt ? m->hgt : 100;
+}
+
+// the palettes have no items of their own: one per cell, so the choice (menu, cell) is one the guest can take
+static void ensure_cells(Menu *m)
+{
+	if (m->n)
+		return;
+	for (int i = 0; i < 256; i++) {
+		Item *it = insert_item(m, -1);
+		it->text[0] = 1;
+		it->text[1] = ' ';
+	}
+}
+
+static CGImageRef custom_image(Menu *m, int hilite)
+{
+	int w, h;
+	custom_size(m, &w, &h);
+	Port *p = port_new(0, 0, (QRect){0, 0, (int16_t)h, (int16_t)w}, 1);
+	Port *saved = qd_port;
+	qd_port = p;
+	uint32_t rect = gcalloc(16), which = gcalloc(4);
+	PUTRECT(rect, ((QRect){0, 0, (int16_t)h, (int16_t)w}));
+	def_call(m, 0, rect, (QPoint){0, 0}, which);
+	if (hilite > 0) {
+		ST16(which, (uint16_t)hilite);
+		def_call(m, 11, rect, (QPoint){0, 0}, which);
+	}
+	gfree(rect);
+	gfree(which);
+	qd_port = saved;
+	CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+	CGContextRef bc = CGBitmapContextCreate(G(p->pix), w, h, 8, p->rowBytes, cs, kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Big);
+	CGImageRef img = bc ? CGBitmapContextCreateImage(bc) : NULL;
+	if (bc)
+		CGContextRelease(bc);
+	CGColorSpaceRelease(cs);
+	port_free(p);
+	return img;
+}
+
+static int custom_item_at(Menu *m, int x, int y)
+{
+	int w, h;
+	custom_size(m, &w, &h);
+	uint32_t rect = gcalloc(16), which = gcalloc(40);
+	PUTRECT(rect, ((QRect){0, 0, (int16_t)h, (int16_t)w}));
+	memset(G(which), 0, 40);
+	def_call(m, 10, rect, (QPoint){(int16_t)x, (int16_t)y}, which);
+	int item = (int16_t)LD16(which + 6);
+	gfree(rect);
+	gfree(which);
+	return item;
+}
+
+// debugging: ask a custom menu definition what it makes of itself
+void menu_probe(int16_t id, int msg)
+{
+	Menu *m = by_id(id);
+	if (!m || !m->def) {
+		ppc_log("probe: menu %d is not custom", id);
+		return;
+	}
+	ensure_cells(m);
+	if (msg == 0) {
+		CGImageRef img = custom_image(m, 0);
+		const char *path = getenv("PPC_MENU_PNG");
+		if (img && path) {
+			NSURL *u = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path]];
+			CGImageDestinationRef d = CGImageDestinationCreateWithURL((__bridge CFURLRef)u, CFSTR("public.png"), 1, NULL);
+			CGImageDestinationAddImage(d, img, NULL);
+			CGImageDestinationFinalize(d);
+			CFRelease(d);
+		}
+		ppc_log("probe: def code %08x toc %08x", LD32(m->def), LD32(m->def + 4));
+		ppc_log("probe: menu %d drawn %zu x %zu", id, img ? CGImageGetWidth(img) : 0, img ? CGImageGetHeight(img) : 0);
+		if (img)
+			CGImageRelease(img);
+		return;
+	}
+	if (msg == 10 || msg == 1) {
+		uint32_t rect = gcalloc(16), which = gcalloc(40);
+		PUTRECT(rect, ((QRect){0, 0, (int16_t)m->hgt, (int16_t)m->wid}));
+		for (int y = 6; y < m->hgt; y += getenv("PPC_PROBE_ONE") ? 1000 : 13) {
+			char line[256] = "";
+			for (int x = 6; x < m->wid; x += getenv("PPC_PROBE_ONE") ? 1000 : 13) {
+				memset(G(which), 0, 40);
+				def_call(m, msg, rect, (QPoint){(int16_t)x, (int16_t)y}, which);
+				snprintf(line + strlen(line), 20, " %d", (int16_t)LD16(which + 6));
+			}
+			ppc_log("probe find y %d:%s", y, line);
+		}
+		return;
+	}
+	uint32_t rect = gcalloc(16), which = gcalloc(4);
+	ST16(rect, 0), ST16(rect + 2, 0), ST16(rect + 4, 0), ST16(rect + 6, 0);
+	uint32_t a[5] = {(uint32_t)msg, m->h, rect, 0, which};
+	uint32_t r = ppc_callback(m->def, 5, a);
+	ppc_log("probe: menu %d msg %d -> %08x rect %d,%d,%d,%d item %d n %d", id, msg, r, (int16_t)LD16(rect), (int16_t)LD16(rect + 2),
+		(int16_t)LD16(rect + 4), (int16_t)LD16(rect + 6), (int16_t)LD16(which), m->n);
+	gfree(rect);
+	gfree(which);
+}
+
+// debugging: what a click at x, y in a custom menu chooses, as the palette view does
+void menu_custom_click(int16_t id, int x, int y)
+{
+	Menu *m = by_id(id);
+	if (!m || !m->def)
+		return;
+	ensure_cells(m);
+	int item = custom_item_at(m, x, y);
+	ppc_log("custom menu %d click %d,%d -> item %d", id, x, y, item);
+	if (item > 0)
+		ev_post_mouse_part(NULL, 1, (uint32_t)(uint16_t)id << 16 | (uint32_t)item);
 }
