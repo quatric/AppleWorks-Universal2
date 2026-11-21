@@ -383,11 +383,71 @@ static int guest_has_quit(void)
 	return 0;
 }
 
+// The guest re-enables and re-disables its menu items on every idle pass, so "dirty" is nearly always set.
+// Replacing the Cocoa menu bar that often, or while the user has a menu open, leaves the open menu dead
+// (everything greyed), so the bar is rebuilt only when what it shows has changed and no menu is open.
+static int bar_tracking;
+
+static uint64_t bar_signature(void)
+{
+	uint64_t h = 1469598103934665603ull;
+#define MIX(p, n) for (size_t q_ = 0; q_ < (n); q_++) h = (h ^ ((const uint8_t *)(p))[q_]) * 1099511628211ull
+	int md = modal_depth > 0;
+	MIX(&md, sizeof md);
+	for (int pass = 0; pass < 2; pass++) {
+		int cnt = pass ? nhier : nbar;
+		for (int b = 0; b < cnt; b++) {
+			Menu *m = pass ? hier[b] : bar[b];
+			MIX(&m->id, sizeof m->id);
+			MIX(&m->enabled, sizeof m->enabled);
+			MIX(m->title, m->title[0] + 1);
+			for (int i = 0; i < m->n; i++) {
+				Item *it = &m->items[i];
+				MIX(it->text, it->text[0] + 1);
+				MIX(&it->icon, 5);   // icon, cmd, mark, style, mods
+				MIX(&it->sub, sizeof it->sub);
+				MIX(&it->enabled, sizeof it->enabled);
+			}
+		}
+	}
+#undef MIX
+	return h;
+}
+
+static void watch_tracking(void)
+{
+	static int done;
+	if (done)
+		return;
+	done = 1;
+	NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
+	[nc addObserverForName:NSMenuDidBeginTrackingNotification object:nil queue:nil usingBlock:^(NSNotification *n) {
+		(void)n;
+		bar_tracking = 1;
+	}];
+	[nc addObserverForName:NSMenuDidEndTrackingNotification object:nil queue:nil usingBlock:^(NSNotification *n) {
+		(void)n;
+		bar_tracking = 0;
+	}];
+}
+
 void menu_flush(void)
 {
-	if (!dirty || in_popup)
+	static uint64_t shown;
+	static int have_shown;
+	watch_tracking();
+	if (!dirty || in_popup || bar_tracking)
 		return;
+	uint64_t sig = bar_signature();
+	if (have_shown && sig == shown) {
+		dirty = 0;
+		return;
+	}
+	shown = sig;
+	have_shown = 1;
 	dirty = 0;
+	if (getenv("PPC_DBG_MENU"))
+		ppc_log("menu: bar rebuilt");
 	if (!target)
 		target = [XLMenuTarget new];
 	in_bar = 1;
