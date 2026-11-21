@@ -30,6 +30,22 @@ int qd_guest_screen_is_virtual(void);
 @interface XLPanel : NSPanel
 @end
 @implementation XLPanel
+// the palettes (Tools, Button Bar) have square corners, as they did on Mac OS 9: the system's rounded
+// window shape comes from this mask, so give it a plain rectangle
+- (id)_cornerMask
+{
+	static NSImage *square;
+	if (!square) {
+		square = [NSImage imageWithSize:NSMakeSize(16, 16) flipped:NO drawingHandler:^BOOL(NSRect r) {
+			[[NSColor blackColor] set];
+			NSRectFill(r);
+			return YES;
+		}];
+		square.capInsets = NSEdgeInsetsMake(7, 7, 7, 7);
+		square.resizingMode = NSImageResizingModeStretch;
+	}
+	return square;
+}
 - (NSRect)constrainFrameRect:(NSRect)r toScreen:(NSScreen *)screen { return qd_guest_screen_is_virtual() ? r : [super constrainFrameRect:r toScreen:screen]; }
 - (BOOL)canBecomeKeyWindow { return YES; }
 @end
