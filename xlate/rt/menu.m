@@ -236,6 +236,8 @@ static int menu_on(const Menu *m)
 	return 0;
 }
 
+int menu_is_modal(void) { return modal_depth > 0; }
+
 void menu_modal(int delta)
 {
 	int was = modal_depth > 0;

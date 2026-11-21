@@ -295,6 +295,13 @@ static void write_event(uint32_t a, Ev *e)
 void timers_run(void);
 void net_run(void);
 
+int menu_is_modal(void);
+
+// AppleWorks adjusts its menus (Cut, Copy, Undo...) only when it handles a click in the menu bar, but the
+// macOS menus and their key equivalents are used without that click. After the user's input, once the guest has
+// handled it, it gets an empty menu-bar click so its menus match the document by the time they are used.
+static int menus_stale;
+
 static int get_event(uint16_t mask, uint32_t evp, double wait)
 {
 	double deadline = CFAbsoluteTimeGetCurrent() + wait;
@@ -304,6 +311,15 @@ static int get_event(uint16_t mask, uint32_t evp, double wait)
 		net_run();
 		Ev e;
 		int got = take(mask, &e, 1) || update_event(mask, &e);
+		if (!got && menus_stale && (mask & 2) && !menu_is_modal()) {
+			menus_stale = 0;
+			memset(&e, 0, sizeof e);
+			e.what = 1;
+			e.where = (QPoint){5, 5};
+			e.part = 1;
+			got = 1;
+		} else if (got && (e.what == 1 || e.what == 2 || e.what == 3 || e.what == 5) && !(e.what == 1 && e.part == 1 && !e.win && !e.data))
+			menus_stale = 1;
 		if (got) {
 			if (e.what == 8 && e.win)
 				e.message = e.win->tok;
