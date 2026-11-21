@@ -224,6 +224,18 @@ static int is_edit_menu(const Menu *m)
 	return x && v;
 }
 
+// the guest can switch the whole Edit menu off (EnableItem 0) while its items are live; the macOS bar
+// then offered nothing, so an Edit menu counts as on when any of its items is
+static int menu_on(const Menu *m)
+{
+	if (m->enabled || !is_edit_menu(m))
+		return m->enabled;
+	for (int i = 0; i < m->n; i++)
+		if (m->items[i].enabled)
+			return 1;
+	return 0;
+}
+
 void menu_modal(int delta)
 {
 	int was = modal_depth > 0;
@@ -321,7 +333,7 @@ static NSMenuItem *build_item(Menu *m, int i, int depth)
 	NSMenuItem *ni = [[NSMenuItem alloc] initWithTitle:title action:@selector(choose:) keyEquivalent:@""];
 	ni.target = target;
 	ni.tag = (NSInteger)((uint32_t)(uint16_t)m->id << 16 | (uint32_t)(i + 1));
-	ni.enabled = m->enabled && it->enabled;
+	ni.enabled = menu_on(m) && it->enabled;
 	if (in_bar && modal_depth > 0)
 		ni.enabled = ni.enabled && is_edit_menu(m) && is_edit_cmd(it);
 	if (it->cmd == 0x1b) {
@@ -399,7 +411,8 @@ static uint64_t bar_signature(void)
 		for (int b = 0; b < cnt; b++) {
 			Menu *m = pass ? hier[b] : bar[b];
 			MIX(&m->id, sizeof m->id);
-			MIX(&m->enabled, sizeof m->enabled);
+			int on_ = menu_on(m);
+			MIX(&on_, sizeof on_);
 			MIX(m->title, m->title[0] + 1);
 			for (int i = 0; i < m->n; i++) {
 				Item *it = &m->items[i];
@@ -495,7 +508,7 @@ void menu_flush(void)
 		NSMenu *nm = build(m, 0);
 		NSMenuItem *top = [[NSMenuItem alloc] initWithTitle:nm.title action:NULL keyEquivalent:@""];
 		top.submenu = nm;
-		top.enabled = m->enabled && (modal_depth == 0 || is_edit_menu(m));
+		top.enabled = menu_on(m) && (modal_depth == 0 || is_edit_menu(m));
 		[main addItem:top];
 	}
 	in_bar = 0;
