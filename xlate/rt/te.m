@@ -391,7 +391,7 @@ static void draw_segment(CGContextRef cg, TEng *e, const uint8_t *s, int n, TRun
 	NSMutableDictionary *at = [NSMutableDictionary dictionaryWithDictionary:@{(id)kCTFontAttributeName: (id)f,
 		(id)kCTForegroundColorAttributeName: (id)color, (id)kCTKernAttributeName: @0, (id)kCTLigatureAttributeName: @0}];
 	if ((r->face & 1) && !(CTFontGetSymbolicTraits(f) & kCTFontBoldTrait))
-		at[(id)kCTStrokeWidthAttributeName] = @(-3.0);
+		at[(id)kCTStrokeWidthAttributeName] = @(-8.0);
 	if (r->face & 4)
 		at[(id)kCTUnderlineStyleAttributeName] = @(kCTUnderlineStyleSingle);
 	CFAttributedStringRef as = CFAttributedStringCreate(NULL, str, (CFDictionaryRef)at);

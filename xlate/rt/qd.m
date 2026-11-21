@@ -457,7 +457,7 @@ static CTLineRef make_line(Port *p, const uint8_t *s, int n, CGColorRef color)
 	if (p->txFace & 0x40)
 		kern += 1;   // extend
 	if ((p->txFace & 1) && !(CTFontGetSymbolicTraits(font) & kCTFontBoldTrait))
-		at[(id)kCTStrokeWidthAttributeName] = @(-3.0);
+		at[(id)kCTStrokeWidthAttributeName] = @(-8.0);
 	if (kern)
 		at[(id)kCTKernAttributeName] = @(kern);
 	CFAttributedStringRef as = CFAttributedStringCreate(NULL, str, (CFDictionaryRef)at);

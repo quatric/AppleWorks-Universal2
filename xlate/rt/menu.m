@@ -592,6 +592,17 @@ void menu_flush(void)
 		ab.target = NSApp;
 		[am addItem:[NSMenuItem separatorItem]];
 	}
+	// Preferences belongs in the application menu: the application's own Preferences submenu goes there
+	for (int h = 0; h < nhier + nbar; h++) {
+		Menu *pm = h < nhier ? hier[h] : bar[h - nhier];
+		if (pm->title[0] == 11 && !memcmp(pm->title + 1, "Preferences", 11) && !pm->def) {
+			NSMenuItem *pi = [[NSMenuItem alloc] initWithTitle:@"Preferences" action:NULL keyEquivalent:@""];
+			pi.submenu = build(pm, 1);
+			[am addItem:pi];
+			[am addItem:[NSMenuItem separatorItem]];
+			break;
+		}
+	}
 	NSMenuItem *hide = [am addItemWithTitle:[@"Hide " stringByAppendingString:app] action:@selector(hide:) keyEquivalent:@"h"];
 	hide.target = NSApp;
 	NSMenuItem *ho = [am addItemWithTitle:@"Hide Others" action:@selector(hideOtherApplications:) keyEquivalent:@"h"];
