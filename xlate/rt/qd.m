@@ -1616,6 +1616,16 @@ static void sh_DrawText(PPC *c)
 	if (CUR)
 		draw_text_via_procs(CUR, A(0) + (int16_t)A(1), (int16_t)A(2));
 }
+// DrawChar(ch): one character at the pen
+static void sh_DrawChar(PPC *c)
+{
+	static uint32_t buf;
+	if (!buf)
+		buf = gcalloc(4);
+	ST8(buf, (uint8_t)A(0));
+	if (CUR)
+		draw_text_via_procs(CUR, buf, 1);
+}
 static void sh_StdText(PPC *c) { if (CUR) qd_text_draw(CUR, G(A(1)), (int16_t)A(0)); }
 static void sh_StdTxMeas(PPC *c)
 {
@@ -2081,7 +2091,7 @@ static const ShimDef qdshims[] = {
 	S(SetRectRgn), S(RectRgn), S(OffsetRgn), S(InsetRgn), S(SectRgn), S(UnionRgn), S(XorRgn), S(DiffRgn), S(EmptyRgn),
 	S(PtInRgn), S(RectInRgn), S(GetRegionBounds), S(BitMapToRegion), S(OpenRgn), S(CloseRgn), S(TextFont),
 	S(TextFace), S(TextMode), S(TextSize), S(DrawString), S(DrawText), S(StdText), S(StdTxMeas), S(StringWidth),
-	S(TextWidth), S(CharWidth), S(GetFontInfo), S(GetFNum), S(GetFontName), S(FMGetFontFamilyFromName), S(FMGetFontFamilyTextEncoding),
+	S(DrawChar), S(TextWidth), S(CharWidth), S(GetFontInfo), S(GetFNum), S(GetFontName), S(FMGetFontFamilyFromName), S(FMGetFontFamilyTextEncoding),
 	S(RevertTextEncodingToScriptInfo), S(GetSysFont), S(GetAppFont),
 	S(GetDefFontSize), S(SetOutlinePreferred), S(FMSwapFont), S(TruncString), S(NewGWorld), S(DisposeGWorld),
 	S(GetGWorld), S(GetGWorldDevice), S(SetGWorld), S(GetGWorldPixMap), S(LockPixels), {"UnlockPixels", sh_StdNop}, S(GetPixBaseAddr),

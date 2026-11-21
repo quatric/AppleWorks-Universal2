@@ -26,6 +26,7 @@ typedef struct {
 	int hidden;
 	TEng *te;              // edit text
 	int16_t res_id;        // icon, picture, CNTL
+	uint32_t hsum;         // what the text handle held when the edit text last took it
 	uint32_t pane;         // a user pane standing for an item that isn't a control, once asked for
 } DItem;
 
@@ -54,6 +55,14 @@ static Win *dwin(Dlg *d) { return WIN(d->win); }
 static DItem *item(Dlg *d, int i) { return d && i >= 1 && i <= d->n ? &d->items[i - 1] : NULL; }
 
 static int16_t be16(const uint8_t *p) { return (int16_t)(p[0] << 8 | p[1]); }
+
+static uint32_t handle_sum(uint32_t h)
+{
+	uint32_t n = h && HP(h) ? HSize(h) : 0, a = 2166136261u;
+	for (uint32_t i = 0; i < n && i < 1024; i++)
+		a = (a ^ *(const uint8_t *)G(HP(h) + i)) * 16777619u;
+	return a ^ n;
+}
 
 static uint32_t text_handle(const uint8_t *s, int n)
 {
@@ -150,6 +159,7 @@ static void add_items(Dlg *d, const uint8_t *ditl, uint32_t len, int dh, int dv)
 			uint8_t t[256];
 			int tl = expand(data, l, t, 255);
 			it.h = text_handle(t, tl);
+			it.hsum = handle_sum(it.h);
 			it.te = new_edit(d, it.r, t, tl);
 		} else if (kind == iconItem || kind == picItem) {
 			it.res_id = l >= 2 ? be16(data) : 0;
@@ -213,8 +223,19 @@ static void draw_item(Dlg *d, int i)
 	int kind = it->type & 0x7f;
 	if (kind >= ctrlItem && kind <= ctrlItem + resCtrl) {
 		Ctl *k = CTL(it->h);
-		if (k)
+		if (k) {
+			if (kind == ctrlItem + chkCtrl || kind == ctrlItem + radCtrl) {
+				// a check box or radio button's title is anti-aliased text: drawn again over itself it thickens
+				RGB16 save = p->bg;
+				p->bg = dialog_bg(d);
+				uint32_t buf = gcalloc(8);
+				PUTRECT(buf, it->r);
+				SHIM_CALL("EraseRect", buf);
+				gfree(buf);
+				p->bg = save;
+			}
 			ctl_draw(k);
+		}
 	} else if (kind == statText) {
 		uint32_t n = HSize(it->h);
 		uint8_t t[1024];
@@ -227,6 +248,16 @@ static void draw_item(Dlg *d, int i)
 		te_draw(e, NULL);
 		te_dispose(e);
 	} else if (kind == editText) {
+		// the application sets an edit field's text by writing its handle
+		uint32_t sum = handle_sum(it->h);
+		if (getenv("PPC_DBG_DLG"))
+			ppc_log("dialog edit item h %08x te %p size %u sum %08x last %08x", it->h, (void *)it->te, it->h ? HSize(it->h) : 0, sum, it->hsum);
+		if (it->te && it->h && sum != it->hsum) {
+			it->hsum = sum;
+			uint32_t n = HSize(it->h);
+			te_set_text(it->te, G(HP(it->h)), n > 255 ? 255 : (int)n);
+			te_set_select(it->te, 0, (int)(n > 255 ? 255 : n));
+		}
 		draw_frame(d, it->r);
 		te_draw(it->te, NULL);
 	} else if (kind == iconItem) {
@@ -496,6 +527,8 @@ static void sh_SetDialogItemText(PPC *c)
 	if (A(0) && HP(A(0))) {
 		HSetSize(A(0), n);
 		memcpy(G(HP(A(0))), s + 1, n);
+		if (it)
+			it->hsum = handle_sum(A(0));
 	}
 	if (it && it->te) {
 		te_set_text(it->te, s + 1, n);
@@ -523,6 +556,49 @@ static void sh_SetDialogItemText(PPC *c)
 }
 
 // GetDialogItemAsControl(dialog, item, ControlRef *)
+// On Mac OS X an edit item is a control too: GetDialogItemAsControl gives a pane standing for it, and the
+// application sets and reads the field through that control's 'text' data.
+static DItem *pane_item(uint32_t ctl, Dlg **owner)
+{
+	for (Dlg *d = dialogs; d; d = d->next)
+		for (int i = 0; i < d->n; i++)
+			if (ctl && d->items[i].pane == ctl && (d->items[i].type & 0x7f) == editText && d->items[i].te) {
+				if (owner)
+					*owner = d;
+				return &d->items[i];
+			}
+	return NULL;
+}
+
+TEng *dialog_pane_te(uint32_t ctl)
+{
+	DItem *it = pane_item(ctl, NULL);
+	return it ? it->te : NULL;
+}
+
+void dialog_pane_set_text(uint32_t ctl, const uint8_t *s, int n)
+{
+	Dlg *d = NULL;
+	DItem *it = pane_item(ctl, &d);
+	if (!it)
+		return;
+	te_set_text(it->te, s, n);
+	te_set_select(it->te, 0, n);
+	Win *w = dwin(d);
+	if (w && w->visible) {
+		uint32_t save = ppc_shim_call("GetQDGlobalsThePort", 0, NULL);
+		SHIM_CALL("SetPort", SHIM_CALL("GetWindowPort", d->win));
+		uint32_t buf = gcalloc(8);
+		PUTRECT(buf, it->r);
+		SHIM_CALL("EraseRect", buf);
+		gfree(buf);
+		draw_item(d, (int)(it - d->items) + 1);
+		win_dirty(w, it->r);
+		if (save)
+			SHIM_CALL("SetPort", save);
+	}
+}
+
 static void sh_GetDialogItemAsControl(PPC *c)
 {
 	DItem *it = item(DLG(A(0)), (int16_t)A(1));

@@ -315,6 +315,14 @@ static SavedFont theme_font_set(Port *p, int id)
 }
 static void theme_font_restore(Port *p, SavedFont s) { p->txFont = s.font, p->txSize = s.size, p->txFace = s.face; }
 
+// UseThemeFont(themeFontID, script): the current port's text takes the theme font
+static void sh_UseThemeFont(PPC *c)
+{
+	if (qd_port)
+		theme_font_set(qd_port, (int16_t)A(0));
+	RET(0);
+}
+
 static NSData *roman(NSString *s)
 {
 	NSData *d = [s dataUsingEncoding:NSMacOSRomanStringEncoding allowLossyConversion:YES];
@@ -454,6 +462,7 @@ static void sh_DrawThemeButton(PPC *c)
 }
 
 static const ShimDef themeshims[] = {
+	S(UseThemeFont),
 	S(DrawThemeButton),
 	S(TruncateThemeText), S(DrawThemeTextBox),
 	S(RegisterAppearanceClient), S(UnregisterAppearanceClient),

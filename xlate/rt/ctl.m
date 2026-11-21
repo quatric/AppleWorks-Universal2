@@ -290,6 +290,8 @@ static CTFontRef ctl_font(Ctl *c, int *small)
 		if (!(c->fs_flags & 4) && (c->fs_flags & 1) && font != 0)
 			size = 12;
 	}
+	if (getenv("PPC_DBG_CTLFONT"))
+		ppc_log("ctl font kind %d flags %04x font %d size %d style %d -> face %d", c->kind, c->fs_flags, c->fs_font, c->fs_size, c->fs_style, face);
 	if (size <= 0)
 		size = 12;
 	if (font == 0 && !(c->fs_flags & 1))
@@ -1385,6 +1387,9 @@ static void set_static_text(Ctl *k, const void *bytes, uint32_t n)
 	memcpy(G(HP(k->text)), bytes, n);
 }
 
+TEng *dialog_pane_te(uint32_t ctl);
+void dialog_pane_set_text(uint32_t ctl, const uint8_t *s, int n);
+
 static void sh_SetControlData(PPC *c)
 {
 	// SetControlData(control, part, tag, size, data)
@@ -1407,6 +1412,8 @@ static void sh_SetControlData(PPC *c)
 	case 'text':
 		if (k->kind == K_EDITTEXT)
 			te_set_text(k->te, G(d), (int)size);
+		else if (dialog_pane_te(k->h))
+			dialog_pane_set_text(k->h, G(d), (int)size);
 		else
 			set_static_text(k, G(d), size);
 		break;
@@ -1416,6 +1423,8 @@ static void sh_SetControlData(PPC *c)
 		NSData *b = [s dataUsingEncoding:NSMacOSRomanStringEncoding allowLossyConversion:YES] ?: [NSData data];
 		if (k->kind == K_EDITTEXT)
 			te_set_text(k->te, b.bytes, (int)b.length);
+		else if (dialog_pane_te(k->h))
+			dialog_pane_set_text(k->h, b.bytes, (int)b.length);
 		else
 			set_static_text(k, b.bytes, (uint32_t)b.length);
 		break;
@@ -1481,6 +1490,9 @@ static void sh_GetControlData(PPC *c)
 		if (k->kind == K_EDITTEXT) {
 			src = k->te->t;
 			n = (uint32_t)k->te->n;
+		} else if (dialog_pane_te(k->h)) {
+			src = dialog_pane_te(k->h)->t;
+			n = (uint32_t)dialog_pane_te(k->h)->n;
 		} else if (k->text) {
 			src = G(HP(k->text));
 			n = HSize(k->text);
