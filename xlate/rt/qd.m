@@ -1608,6 +1608,8 @@ static void sh_DrawString(PPC *c)
 }
 static void sh_DrawText(PPC *c)
 {
+	if (getenv("PPC_DBG_FG") && CUR)
+		ppc_log("drawtext '%.*s' fg %04x %04x %04x", (int16_t)A(2), (const char *)G(A(0) + (int16_t)A(1)), CUR->fg.r, CUR->fg.g, CUR->fg.b);
 	if (ppc_verbose >= 3)
 		ppc_log("DrawText '%.*s' at %d,%d", (int16_t)A(2), (const char *)G(A(0) + (int16_t)A(1)), CUR ? CUR->pnLoc.h : 0, CUR ? CUR->pnLoc.v : 0);
 	static int bt;

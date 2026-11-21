@@ -1157,7 +1157,8 @@ uint32_t ppc_callback(uint32_t tvec, int n, const uint32_t *args);
 // Messages: draw 0, size 2, find item 10, highlight item 11.
 static uint32_t def_call(Menu *m, int msg, uint32_t rect, QPoint hit, uint32_t which)
 {
-	uint32_t a[5] = {(uint32_t)msg, m->h, rect, (uint32_t)(uint16_t)hit.v << 16 | (uint16_t)hit.h, which};
+	// the definition takes the point with its horizontal part in the high half
+	uint32_t a[5] = {(uint32_t)msg, m->h, rect, (uint32_t)(uint16_t)hit.h << 16 | (uint16_t)hit.v, which};
 	return ppc_callback(m->def, 5, a);
 }
 
