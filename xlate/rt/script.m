@@ -307,6 +307,9 @@ static int step_ready(const char *cmd, double late)
 		return 1;
 	if (strcmp(op, "wclick") && !((!strcmp(op, "down") || !strcmp(op, "move")) && !(t[0] == '-' || (t[0] >= '0' && t[0] <= '9'))))
 		return 1;
+	for (char *q = t; *q; q++)
+		if (*q == '_')
+			*q = ' ';
 	Win *w = titled(t);
 	return w && w->visible;
 }
