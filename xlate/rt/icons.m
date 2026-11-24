@@ -325,20 +325,27 @@ static void sh_GetIconRef(PPC *c)
 	uint32_t type = A(2);
 	char t[5] = {(char)(type >> 24), (char)(type >> 16), (char)(type >> 8), (char)type, 0};
 	NSImage *im = nil;
-	if (type == 'fldr')
-		im = [NSWorkspace.sharedWorkspace iconForFile:@"/System"];
-	else {
-		// AppleWorks' own document types: the icon its Info.plist names for the type
-		NSString *ts = NSFileTypeForHFSTypeCode(type);
-		NSString *os4 = [[NSString alloc] initWithBytes:t length:4 encoding:NSMacOSRomanStringEncoding] ?: @"";
-		for (NSDictionary *dt in [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleDocumentTypes"])
-			if ([dt[@"CFBundleTypeOSTypes"] containsObject:os4] && dt[@"CFBundleTypeIconFile"]) {
-				NSString *f = dt[@"CFBundleTypeIconFile"];
-				im = [[NSImage alloc] initWithContentsOfFile:[NSBundle.mainBundle pathForResource:f.stringByDeletingPathExtension ofType:@"icns"]];
-				break;
-			}
-		if (!im)
-			im = [NSWorkspace.sharedWorkspace iconForFileType:ts];
+	@try {
+		if (type == 'fldr')
+			im = [NSWorkspace.sharedWorkspace iconForFile:@"/System"];
+		else {
+			// AppleWorks' own document types: the icon its Info.plist names for the type
+			NSString *ts = NSFileTypeForHFSTypeCode(type);
+			NSString *os4 = [[NSString alloc] initWithBytes:t length:4 encoding:NSMacOSRomanStringEncoding] ?: @"";
+			for (NSDictionary *dt in [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleDocumentTypes"])
+				if ([dt[@"CFBundleTypeOSTypes"] containsObject:os4] && dt[@"CFBundleTypeIconFile"]) {
+					NSString *f = dt[@"CFBundleTypeIconFile"];
+					NSString *path = [NSBundle.mainBundle pathForResource:f.stringByDeletingPathExtension ofType:@"icns"];
+					if (path)
+						im = [[NSImage alloc] initWithContentsOfFile:path];
+					break;
+				}
+			if (!im && ts.length)
+				im = [NSWorkspace.sharedWorkspace iconForFileType:ts];
+		}
+	} @catch (NSException *e) {
+		ppc_log("GetIconRef %s: %s", t, e.reason.UTF8String);
+		im = nil;
 	}
 	(void)t;
 	if (!ref_images)
