@@ -68,7 +68,12 @@ def main():
     own = None
     try:
         with open(os.path.join(contents, 'Info.plist'), 'rb') as f:
-            named = plistlib.load(f).get('CFBundleIconFile')
+            orig = plistlib.load(f)
+        named = orig.get('CFBundleIconFile')
+        # the document types with their icons (the .icns files are copied into Resources), so that
+        # Finder shows AppleWorks icons for .cwk, .cws and the rest
+        if orig.get('CFBundleDocumentTypes'):
+            info['CFBundleDocumentTypes'] = orig['CFBundleDocumentTypes']
         if named:
             path = os.path.join(contents, 'Resources', named if named.endswith('.icns') else named + '.icns')
             if os.path.isfile(path):

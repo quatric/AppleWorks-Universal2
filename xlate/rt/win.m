@@ -421,8 +421,11 @@ static void ns_title(Win *w)
 	if (w->title[0] == 5 && !memcmp(w->title + 1, "Tools", 5)) {
 		NSWindow *nw = w->ns;
 		nw.styleMask &= ~NSWindowStyleMaskResizable;
+		// a palette: only the close button, so the title bar does not make the window wider than its icons
+		[[nw standardWindowButton:NSWindowMiniaturizeButton] setHidden:YES];
+		[[nw standardWindowButton:NSWindowZoomButton] setHidden:YES];
 		if (ppc_verbose)
-			ppc_log("Tools window: resizable %d", (int)((nw.styleMask & NSWindowStyleMaskResizable) != 0));
+			ppc_log("Tools window: resizable %d frame %g content %g", (int)((nw.styleMask & NSWindowStyleMaskResizable) != 0), nw.frame.size.width, [nw contentRectForFrameRect:nw.frame].size.width);
 	}
 }
 

@@ -1,6 +1,6 @@
 # AppleWorks 6 Universal
 
-Version 6.2.9-2-U2B (see `VERSION`).
+Version 6.2.9-3-U2B (see `VERSION`).
 
 AppleWorks 6.2.9 for Mac OS X, running natively on Apple silicon and Intel Macs.
 

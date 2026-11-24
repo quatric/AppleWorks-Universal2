@@ -327,8 +327,18 @@ static void sh_GetIconRef(PPC *c)
 	NSImage *im = nil;
 	if (type == 'fldr')
 		im = [NSWorkspace.sharedWorkspace iconForFile:@"/System"];
-	else
-		im = [NSWorkspace.sharedWorkspace iconForFileType:NSFileTypeForHFSTypeCode(type)];
+	else {
+		// AppleWorks' own document types: the icon its Info.plist names for the type
+		NSString *ts = NSFileTypeForHFSTypeCode(type);
+		for (NSDictionary *dt in [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleDocumentTypes"])
+			if ([dt[@"CFBundleTypeOSTypes"] containsObject:[ts substringWithRange:NSMakeRange(1, 4)]] && dt[@"CFBundleTypeIconFile"]) {
+				NSString *f = dt[@"CFBundleTypeIconFile"];
+				im = [[NSImage alloc] initWithContentsOfFile:[NSBundle.mainBundle pathForResource:f.stringByDeletingPathExtension ofType:@"icns"]];
+				break;
+			}
+		if (!im)
+			im = [NSWorkspace.sharedWorkspace iconForFileType:ts];
+	}
 	(void)t;
 	if (!ref_images)
 		ref_images = [NSMutableDictionary new];
