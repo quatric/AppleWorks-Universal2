@@ -330,8 +330,9 @@ static void sh_GetIconRef(PPC *c)
 	else {
 		// AppleWorks' own document types: the icon its Info.plist names for the type
 		NSString *ts = NSFileTypeForHFSTypeCode(type);
+		NSString *os4 = [[NSString alloc] initWithBytes:t length:4 encoding:NSMacOSRomanStringEncoding] ?: @"";
 		for (NSDictionary *dt in [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleDocumentTypes"])
-			if ([dt[@"CFBundleTypeOSTypes"] containsObject:[ts substringWithRange:NSMakeRange(1, 4)]] && dt[@"CFBundleTypeIconFile"]) {
+			if ([dt[@"CFBundleTypeOSTypes"] containsObject:os4] && dt[@"CFBundleTypeIconFile"]) {
 				NSString *f = dt[@"CFBundleTypeIconFile"];
 				im = [[NSImage alloc] initWithContentsOfFile:[NSBundle.mainBundle pathForResource:f.stringByDeletingPathExtension ofType:@"icns"]];
 				break;

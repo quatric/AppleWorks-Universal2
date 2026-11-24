@@ -51,7 +51,7 @@ def main():
         'CFBundleExecutable': exe,
         'CFBundleName': name,
         'CFBundleDisplayName': name,
-        'CFBundleIdentifier': 'com.worldbook.' + exe.lower(),
+        'CFBundleIdentifier': 'com.apple.' + exe.lower(),
         'CFBundlePackageType': 'APPL',
         'CFBundleSignature': creator,
         'CFBundleShortVersionString': port or version.split(' ')[0],
