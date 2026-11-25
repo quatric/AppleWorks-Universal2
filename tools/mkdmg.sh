@@ -25,5 +25,17 @@ cp "build/AppleWorks 6.app/Contents/Resources/AppIcon.icns" $S/.VolumeIcon.icns
 SetFile -a C $S
 V=$(cat VERSION)
 mkdir -p dist; rm -f "dist/AppleWorks_$V.dmg"
-hdiutil create -volname "AppleWorks $V" -srcfolder $S -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "dist/AppleWorks_$V.dmg"
+if ! hdiutil create -volname "AppleWorks $V" -srcfolder $S -fs HFS+ -format UDZO -imagekey zlib-level=9 -ov "dist/AppleWorks_$V.dmg"; then
+	# hdiutil create fails ("Resource busy") on some macOS versions: build the HFS+ image with diskutil
+	MB=$(( $(du -sm $S | cut -f1) * 12 / 10 + 20 ))
+	RW="build/dmgstage.rw.dmg"; rm -f "$RW"
+	diskutil image create blank --fs None --size ${MB}m "$RW"
+	DEV=$(diskutil image attach --nomount "$RW" | grep -oE '/dev/disk[0-9]+' | head -1)
+	diskutil eraseDisk JHFS+ "AppleWorks $V" "${DEV#/dev/}" >/dev/null
+	ditto $S "/Volumes/AppleWorks $V"
+	SetFile -a C "/Volumes/AppleWorks $V"
+	diskutil eject "$DEV" >/dev/null
+	diskutil image create from --format UDZO "$RW" "dist/AppleWorks_$V.dmg"
+	rm -f "$RW"
+fi
 rm -rf $S
