@@ -842,6 +842,7 @@ static int handle(Dlg *d, uint32_t ev)
 		QPoint g = PT(LD32(ev + 10)), o = win_origin(w);
 		QPoint pt = {g.v - o.v, g.h - o.h};
 		SHIM_CALL("SetPort", SHIM_CALL("GetWindowPort", d->win));
+		int cand = 0;   // a plain item (a user item pane) under the click: the controls on it get the click first
 		for (int i = d->n; i >= 1; i--) {
 			DItem *it = item(d, i);
 			QRect r = it->r;
@@ -866,14 +867,17 @@ static int handle(Dlg *d, uint32_t ev)
 				te_click(it->te, pt, (mods & 0x200) != 0);
 				return enabled(it) ? i : 0;
 			}
-			return enabled(it) ? i : 0;
+			if (!cand && enabled(it))
+				cand = i;
 		}
 		// a control that isn't an item (embedded user controls)
 		int part = 0;
 		Ctl *k = ctl_find(w, pt, &part);
-		if (k)
+		if (k) {
 			ctl_track(k, pt, 0xffffffff, mods);
-		return 0;
+			return 0;
+		}
+		return cand;
 	}
 	case keyDown:
 	case autoKey: {
