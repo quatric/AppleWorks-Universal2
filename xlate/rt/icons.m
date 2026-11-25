@@ -341,18 +341,9 @@ static void sh_GetIconRef(PPC *c)
 		if (type == 'fldr')
 			im = [NSWorkspace.sharedWorkspace iconForFile:@"/System"];
 		else {
-			// AppleWorks' own document types: the icon its Info.plist names for the type
+			// the original shows a page thumbnail for recent items, so the system's generic document icon stands in
 			NSString *ts = NSFileTypeForHFSTypeCode(type);
-			NSString *os4 = [[NSString alloc] initWithBytes:t length:4 encoding:NSMacOSRomanStringEncoding] ?: @"";
-			for (NSDictionary *dt in [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleDocumentTypes"])
-				if ([dt[@"CFBundleTypeOSTypes"] containsObject:os4] && dt[@"CFBundleTypeIconFile"]) {
-					NSString *f = dt[@"CFBundleTypeIconFile"];
-					NSString *path = [NSBundle.mainBundle pathForResource:f.stringByDeletingPathExtension ofType:@"icns"];
-					if (path)
-						im = [[NSImage alloc] initWithContentsOfFile:path];
-					break;
-				}
-			if (!im && ts.length)
+			if (ts.length)
 				im = [NSWorkspace.sharedWorkspace iconForFileType:ts];
 		}
 	} @catch (NSException *e) {

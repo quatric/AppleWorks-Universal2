@@ -1225,6 +1225,29 @@ static void sh_SizeWindow(PPC *c)
 	if (w)
 		size_window(w, (int16_t)A(1), (int16_t)A(2));
 }
+// DragGrayRgn(rgn, startPt, limitRect, slopRect, axis, actionProc): the mouse's movement while the button
+// is down, as vertical << 16 | horizontal, kept so that the region stays inside the limit rectangle; 0x80008000
+// when the button goes up outside the slop rectangle. (AppleWorks' split bars.)
+static void sh_DragGrayRgn(PPC *c)
+{
+	Rgn *g = RGN(A(0));
+	QPoint start = PT(A(1));
+	QRect lim = RECT(A(2)), slop = RECT(A(3)), bb = g ? g->bbox : (QRect){0, 0, 0, 0};
+	int axis = (int16_t)A(4);
+	QPoint cur = start;
+	while (ev_button_down()) {
+		ev_pump(0.01);
+		cur = ev_mouse_global();
+	}
+	if (cur.h < slop.left || cur.h >= slop.right || cur.v < slop.top || cur.v >= slop.bottom) {
+		RET(0x80008000u);
+		return;
+	}
+	int dh = axis == 2 ? 0 : cur.h - start.h, dv = axis == 1 ? 0 : cur.v - start.v;
+	dh = fmax(lim.left - bb.left, fmin(dh, lim.right - bb.right));
+	dv = fmax(lim.top - bb.top, fmin(dv, lim.bottom - bb.bottom));
+	RET((uint32_t)(uint16_t)dv << 16 | (uint16_t)dh);
+}
 static void sh_DragWindow(PPC *c) { (void)c; }   // Cocoa moves windows by their title bars
 static void sh_GrowWindow(PPC *c)
 {
@@ -1338,7 +1361,7 @@ static const ShimDef winshims[] = {
 	S(GetWindowPort), S(SetPortWindowPort), S(GetWindowFromPort), S(IsWindowVisible), S(IsValidWindowPtr),
 	S(IsWindowCollapsed), S(CollapseWindow), S(GetWindowBounds), S(GetWindowPortBounds), S(GetWindowRegion),
 	S(InvalWindowRect), S(InvalWindowRgn), S(ValidWindowRect), S(ValidWindowRgn), S(BeginUpdate), S(EndUpdate),
-	S(DrawGrowIcon), S(SetWindowContentColor), S(SetWindowStandardState), S(SetWindowUserState), S(MoveWindow),
+	S(DragGrayRgn), S(DrawGrowIcon), S(SetWindowContentColor), S(SetWindowStandardState), S(SetWindowUserState), S(MoveWindow),
 	S(SizeWindow), S(DragWindow), S(GrowWindow), S(TrackGoAway), S(TrackBox), S(ZoomWindow), S(RepositionWindow),
 	S(HideFloatingWindows), S(ShowFloatingWindows), S(IsWindowPathSelectClick), S(WindowPathSelect),
 	S(TrackWindowProxyDrag), S(GetWindowEventTarget), S(FindWindow), S(GetWindowFeatures), S(IsWindowCollapsable),
