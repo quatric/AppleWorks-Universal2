@@ -404,11 +404,13 @@ void pict_draw(Port *p, const uint8_t *data, uint32_t len, QRect dst)
 		r.i += 4;
 		r.v2 = 1;
 	}
-	int guard = 0;
+	int guard = 0, qt_drawn = 0;   // qt_drawn: the last opcode was a QuickTime image
 	while (ok(&r, 1) && guard++ < 200000) {
 		if (r.v2 && (r.i & 1))
 			r.i++;
 		uint16_t op = r.v2 ? u16(&r) : u8(&r);
+		int after_qt = qt_drawn;
+		qt_drawn = 0;
 		Rgn g = {{0, 0, 0, 0}, 0, 0, NULL};
 		int verb = -1;
 		switch (op) {
@@ -617,7 +619,17 @@ void pict_draw(Port *p, const uint8_t *data, uint32_t len, QRect dst)
 		}
 		case 0x0088: case 0x0089: case 0x008a: case 0x008b: case 0x008c: break;
 		case 0x0090: case 0x0091: case 0x0098: case 0x0099: case 0x009a: case 0x009b:
-			pixdata(p, &r, op, off, sx, sy, frame);
+			if (after_qt) {
+				// the low-resolution copy that follows a QuickTime image (Photoshop's): QuickDraw
+				// with QuickTime shows the image only, so this one is read but not drawn
+				Rgn *keep = rgn_new();
+				rgn_copy(keep, p->clip);
+				rgn_set_rect(p->clip, (QRect){0, 0, 0, 0});
+				pixdata(p, &r, op, off, sx, sy, frame);
+				rgn_copy(p->clip, keep);
+				rgn_free(keep);
+			} else
+				pixdata(p, &r, op, off, sx, sy, frame);
 			break;
 		case 0x00a0: skip(&r, 2); break;
 		case 0x00a1: {
@@ -631,6 +643,7 @@ void pict_draw(Port *p, const uint8_t *data, uint32_t len, QRect dst)
 		case 0x8200: {
 			uint32_t size = u32(&r);
 			qt_image(p, &r, size, off, sx, sy, frame);
+			qt_drawn = 1;
 			break;
 		}
 		case 0x8201: { uint32_t size = u32(&r); skip(&r, size); break; }

@@ -641,6 +641,18 @@ int menu_popup(uint32_t h, QPoint g, int cur, int width, CTFontRef font)
 	Menu *m = M(h);
 	if (!m)
 		return 0;
+	// scripted runs have no native menus: PPC_POPUP_PICK="2,1,..." answers the popups in turn
+	static const char *picks;
+	if (getenv("PPC_SCRIPT") && getenv("PPC_POPUP_PICK")) {
+		if (!picks)
+			picks = getenv("PPC_POPUP_PICK");
+		if (*picks) {
+			int v = atoi(picks);
+			picks = strchr(picks, ',') ? strchr(picks, ',') + 1 : picks + strlen(picks);
+			ppc_log("popup: picked item %d", v);
+			return v;
+		}
+	}
 	if (!target)
 		target = [XLMenuTarget new];
 	NSMenu *nm = build(m, 0);
