@@ -132,8 +132,30 @@ static int run_ask(NavD *d, int discard)
 	return (int)r;   // 0 save/discard, 1 cancel, 2 don't save
 }
 
+// the extension modern macOS needs where Mac OS 9 had type and creator codes: the one the Info.plist
+// gives the file type being saved (cwk for AppleWorks documents)
+static NSString *ext_for_type(uint32_t type)
+{
+	char t[4] = {(char)(type >> 24), (char)(type >> 16), (char)(type >> 8), (char)type};
+	NSString *os4 = [[NSString alloc] initWithBytes:t length:4 encoding:NSMacOSRomanStringEncoding];
+	for (NSDictionary *dt in [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleDocumentTypes"])
+		if ([dt[@"CFBundleTypeOSTypes"] containsObject:os4]) {
+			NSString *e = [dt[@"CFBundleTypeExtensions"] firstObject];
+			return e.length && ![e hasPrefix:@"."] ? e : nil;
+		}
+	return nil;
+}
+static NSString *with_ext(NSString *name, uint32_t type)
+{
+	// AppleWorks passes the generic type 'text' when saving its own documents: cwk then
+	NSString *e = name.length && !name.pathExtension.length ? ext_for_type(type) ?: @"cwk" : nil;
+	return e ? [name stringByAppendingPathExtension:e] : name;
+}
+
 static void run(NavD *d)
 {
+	if (d->kind == 1 && d->name)
+		d->name = with_ext(d->name, d->type);
 	win_flush_all();
 	d->paths = nil;
 	d->action = actCancel;
@@ -149,7 +171,7 @@ static void run(NavD *d)
 		return;
 	}
 	if (getenv("PPC_SCRIPT") && d->kind != 2) {   // no native panels in scripted runs: cancel
-		ppc_log("nav: %s panel cancelled (scripted run; PPC_NAV_FILE answers it)", d->kind == 0 ? "open" : "save");
+		ppc_log("nav: %s panel cancelled (scripted run; PPC_NAV_FILE answers it) name %s type %08x", d->kind == 0 ? "open" : "save", d->name ? d->name.UTF8String : "-", d->type);
 		return;
 	}
 	if (d->kind == 0) {
@@ -181,9 +203,10 @@ static void run(NavD *d)
 		p.extensionHidden = NO;
 		p.allowsOtherFileTypes = YES;
 		if ([p runModal] == NSModalResponseOK) {
-			d->paths = @[p.URL.path];
+			NSString *nm = with_ext(p.URL.lastPathComponent, d->type);
 			d->dir = p.URL.path.stringByDeletingLastPathComponent;
-			d->name = p.URL.lastPathComponent;
+			d->paths = @[[d->dir stringByAppendingPathComponent:nm]];
+			d->name = nm;
 			d->action = actSaveAs;
 		}
 	} else {

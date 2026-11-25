@@ -302,6 +302,18 @@ static void sh_GetIconSuite(PPC *c)
 	uint32_t len;
 	RET(res_bytes('ICN#', (int16_t)A(1), &len) || res_bytes('icl8', (int16_t)A(1), &len) || res_bytes('ics#', (int16_t)A(1), &len) ? 0 : -192);
 }
+// an empty suite the application fills (custom document icons): its members are not kept, none is found again
+static void sh_NewIconSuite(PPC *c)
+{
+	uint32_t h = NewHandleClearG(8);
+	ST32(HP(h), 'XLis');
+	ST16(HP(h) + 4, 0x7fff);
+	ST32(A(0), h);
+	RET(0);
+}
+static void sh_AddIconToSuite(PPC *c) { RET(0); (void)c; }
+static void sh_GetIconFromSuite(PPC *c) { ST32(A(0), 0); RET(-192); }
+static void sh_ForEachIconDo(PPC *c) { RET(0); (void)c; }
 static void sh_DisposeIconSuite(PPC *c) { if (A(0) && is_handle(A(0))) DisposeHandleG(A(0)); RET(0); }
 static void sh_PlotIconSuite(PPC *c)
 {
@@ -373,7 +385,7 @@ static void sh_PlotIconRef(PPC *c)
 
 static const ShimDef iconshims[] = {
 	S(GetCIcon), S(DisposeCIcon), S(PlotCIcon), S(PlotIconID), S(GetIconSuite), S(DisposeIconSuite),
-	S(PlotIconSuite), S(GetIconRef), S(RegisterIconRefFromResource), S(ReleaseIconRef), S(UnregisterIconRef),
+	S(PlotIconSuite), S(NewIconSuite), S(AddIconToSuite), S(GetIconFromSuite), S(ForEachIconDo), S(GetIconRef), S(RegisterIconRefFromResource), S(ReleaseIconRef), S(UnregisterIconRef),
 	S(PlotIconRef),
 };
 REGISTER(iconshims)
