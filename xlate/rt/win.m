@@ -424,6 +424,12 @@ static void ns_title(Win *w)
 		// a palette: only the close button, so the title bar does not make the window wider than its icons
 		[[nw standardWindowButton:NSWindowMiniaturizeButton] setHidden:YES];
 		[[nw standardWindowButton:NSWindowZoomButton] setHidden:YES];
+		if ([nw isKindOfClass:NSPanel.class]) {
+			nw.styleMask |= NSWindowStyleMaskUtilityWindow;   // the thin title bar of a palette
+			nw.titleVisibility = NSWindowTitleHidden;           // "Tools" would not fit above 57 points of icons
+			NSRect f = [nw frameRectForContentRect:NSMakeRect(0, 0, 57, [nw contentRectForFrameRect:nw.frame].size.height)];
+			[nw setFrame:NSMakeRect(nw.frame.origin.x, nw.frame.origin.y, f.size.width, nw.frame.size.height) display:YES];
+		}
 		if (ppc_verbose)
 			ppc_log("Tools window: resizable %d frame %g content %g", (int)((nw.styleMask & NSWindowStyleMaskResizable) != 0), nw.frame.size.width, [nw contentRectForFrameRect:nw.frame].size.width);
 	}
